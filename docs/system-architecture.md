@@ -33,8 +33,6 @@ The ESP32-S3 and Raspberry Pi Zero 2W communicate through the same local network
 Optional historical-storage and visualisation services run on a separate laptop to avoid overloading the Raspberry Pi Zero 2W.
 
 ```mermaid
-```
-
 flowchart TD
     Sensors["2 × SHT31 + DS18B20"]
     ESP["ESP32-S3<br/>Sensor node"]
@@ -55,6 +53,7 @@ flowchart TD
     NodeRED -->|"Validated MQTT data"| MQTT
     MQTT -.->|"After MVP"| InfluxDB
     InfluxDB -.-> Grafana
+```
 
 ## Docker deployment
 
@@ -81,19 +80,17 @@ The core services are managed using Docker Compose.
 ## MQTT topics
 
 ```text
-```
-
 microhydros/v1/devices/esp32s3-01/telemetry/raw
 microhydros/v1/devices/esp32s3-01/telemetry/validated
 microhydros/v1/devices/esp32s3-01/telemetry/rejected
 microhydros/v1/devices/esp32s3-01/status
+```
 
 Node-RED subscribes to raw measurements from every compatible device using:
 
 ```text
-```
-
 microhydros/v1/devices/+/telemetry/raw
+```
 
 ## Delivery Behaviour
 
@@ -112,8 +109,8 @@ QoS 1 can deliver a message more than once, downstream components can use **devi
 The timestamp should look like this:
 
 ```text
-```
 2026-09-08T10:15:30
+```
 
 ## Validation and failure handling
 
@@ -161,26 +158,23 @@ An alarm determines whether a valid measurement is outside the desired growing c
 The ESP32-S3 publishes its availability to:
 
 ```text
-```
-
 microhydros/v1/devices/esp32s3-01/status
+```
 
 The online status and MQTT Last Will and Testament message are retained.
 
 ```JSON
-```
-
 {
   "status": "online"
 }
+```
 
 If the ESP32-S3 disconnects unexpectedly, Mosquitto publishes:
 
 ```JSON
-```
-
 {
   "status": "offline"
 }
+```
 
 This allows Node-RED to distinguish between stable measurements and a device that has stopped communicating.

@@ -1,0 +1,13 @@
+# macOS files
+
+.DS_Store
+
+# Temporary editor files
+
+*.swp
+*~
+
+# Generated build output
+build/
+dist/
+

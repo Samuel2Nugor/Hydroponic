@@ -47,8 +47,8 @@ flowchart TD
         Grafana["Grafana container<br/>Visualisation"]
     end
 
-    Sensors --> ES`
-    ESP -->|"MQTT over Wi-Fi"| MQTT
+    Sensors --> ESP32S3
+    ESP32S3 -->|"MQTT over Wi-Fi"| MQTT
     MQTT --> NodeRED
     NodeRED -->|"Validated MQTT data"| MQTT
     MQTT -.->|"After MVP"| InfluxDB

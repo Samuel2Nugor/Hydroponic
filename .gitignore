@@ -11,3 +11,6 @@
 build/
 dist/
 
+# Local secrets
+.env
+docker/mosquitto/config/password_file

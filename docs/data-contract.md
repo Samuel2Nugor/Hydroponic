@@ -136,6 +136,21 @@ microhydros/v1/devices/{device_id}/telemetry/raw
 
 All four measurement fields must be present. A failed measurement uses `null`; the field must not be omitted.
 
+### Plausibility ranges
+
+These ranges determine whether a sensor value is technically plausible. They are deliberately broader than the desired growing-condition ranges and must not be used as alarm thresholds.
+
+| Measurement field | Minimum | Maximum |
+| ----------------- | ------- | ------- |
+| `internal_temperature_c` | `-10.0` | `60.0` |
+| `internal_humidity_percent` | `0.0` | `100.0` |
+| `external_temperature_c` | `-40.0` | `60.0` |
+| `water_temperature_c` | `0.0` | `50.0` |
+
+A numeric value outside its configured range is rejected with the reason code `out_of_plausible_range`.
+
+These initial ranges may be revised after the sensors have been physically tested and calibrated.
+
 ### Sensor-status values
 
 | Value | Meaning |
@@ -346,6 +361,8 @@ Other valid measurements from the same raw message may still be published.
 | `missing_metadata` | Message | Required common metadata is missing |
 | `invalid_metadata` | Message | Required common metadata has an invalid type or value |
 | `missing_measurement` | Measurement | A required measurement field is missing |
+| `missing_sensor_status` | Measurement | The required sensor-status field is missing |
+| `invalid_sensor_status` | Measurement | The sensor status is not one of the supported values |
 | `invalid_type` | Measurement | The measurement is not numeric |
 | `sensor_read_error` | Measurement | The sensor reading failed |
 | `sensor_not_detected` | Measurement | The sensor could not be detected |

@@ -63,4 +63,13 @@ Rejected because firmware should perform basic sensor checks, but the backend st
 
 ### Implementation status
 
-The architecture and data-contract documents have been updated. The Python telemetry service and its Docker container have not yet been implemented.
+The system architecture and data contract identify the Python telemetry service as the validation and timestamp authority.
+
+The Python validator, MQTT client, automated tests and Docker container have been implemented. Local integration testing confirmed that:
+
+* One valid raw message produces four independently validated messages.
+* A failed external sensor produces one rejected measurement.
+* Valid measurements from the remaining sensors continue through the system.
+* All outputs from the same raw message share the same timestamp, `boot_id` and `sequence`.
+
+Deployment and verification on the Raspberry Pi remain pending.

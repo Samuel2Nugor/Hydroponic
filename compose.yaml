@@ -12,6 +12,18 @@ services:
     networks:
       - microhydros-network
 
+  telemetry-service:
+    build:
+      context: .
+      dockerfile: docker/telemetry-service/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    env_file:
+      - .env
+    networks:
+      - microhydros-network
+
   node-red:
     image: nodered/node-red:5.0.7
     restart: unless-stopped

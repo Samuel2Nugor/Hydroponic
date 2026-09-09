@@ -130,6 +130,27 @@ ESP32-S3
 
 A failed sensor measurement is rejected independently. Other valid measurements from the same raw message continue through the system.
 
+## Import the Node-RED flow
+
+The example flow is stored at:
+
+```text
+docker/node-red/flows/validated-telemetry.json
+```
+
+Import this file through the Node-RED editor and then select **Deploy**.
+
+The exported flow does not contain the MQTT password. Configure the broker connection locally with:
+
+* Server: `mosquitto`
+* Port: `1883`
+* Username: `node-red`
+* Password: the local `node-red` MQTT password
+* Topic: `microhydros/v1/devices/+/telemetry/validated/+`
+* QoS: `1`
+
+Do not commit the MQTT password or other credentials.
+
 ## Stop the services
 
 Stop and remove the containers and network without deleting stored data:

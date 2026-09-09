@@ -1,0 +1,78 @@
+[
+    {
+        "id": "f6f2187d.f17ca8",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "7ec9de9124d8ab0f",
+        "type": "mqtt in",
+        "z": "f6f2187d.f17ca8",
+        "name": "Validated telemetry input",
+        "topic": "microhydros/v1/devices/+/telemetry/validated/+",
+        "qos": "1",
+        "datatype": "auto-detect",
+        "broker": "86871c4115886f48",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 290,
+        "y": 360,
+        "wires": [
+            [
+                "23292b492ba719cf"
+            ]
+        ]
+    },
+    {
+        "id": "23292b492ba719cf",
+        "type": "debug",
+        "z": "f6f2187d.f17ca8",
+        "name": "Validated payload",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 690,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "86871c4115886f48",
+        "type": "mqtt-broker",
+        "name": "MicroHydros Mosquitto",
+        "broker": "mosquitto",
+        "port": 1883,
+        "clientid": "microhydros-node-red-dev",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]

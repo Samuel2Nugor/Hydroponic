@@ -11,3 +11,12 @@
 build/
 dist/
 
+# Local secrets
+.env
+docker/mosquitto/config/password_file
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

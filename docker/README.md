@@ -1,5 +1,8 @@
 # Docker development environment
 
+For Raspberry Pi deployment, see the
+[Raspberry Pi deployment guide](../docs/raspberry-pi-deployment.md).
+
 This directory contains the Docker configuration used by the MicroHydros core services.
 
 ## Core services

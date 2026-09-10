@@ -251,4 +251,3 @@ def test_unknown_sensor_status_rejects_only_affected_measurement():
     assert len(rejected) == 1
     assert rejected[0]["measurement"] == "external_temperature"
     assert rejected[0]["reason_code"] == "invalid_sensor_status"
-

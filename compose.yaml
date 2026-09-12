@@ -2,10 +2,17 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
     restart: unless-stopped
-
+    environment:
+      MQTT_HEALTHCHECK_USERNAME: ${MQTT_USERNAME}
+      MQTT_HEALTHCHECK_PASSWORD: ${MQTT_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -u \"$$MQTT_HEALTHCHECK_USERNAME\" -P \"$$MQTT_HEALTHCHECK_PASSWORD\" -t 'microhydros/health/mosquitto' -m 'ok' -q 0 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     ports:
       - "1883:1883"
-
     volumes:
       - ./docker/mosquitto/config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
@@ -18,7 +25,8 @@ services:
       dockerfile: docker/telemetry-service/Dockerfile
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     env_file:
       - .env
     networks:
@@ -28,7 +36,8 @@ services:
     image: nodered/node-red:5.0.7
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     ports:
       - "1880:1880"
     environment:

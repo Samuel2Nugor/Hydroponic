@@ -2,95 +2,60 @@
 
 ## Status
 
-Draft — subject to team review and approval.
+Contract version `v1` is implemented by the Python telemetry validator and verified using automated and end-to-end tests.
+
+The raw, validated and rejected telemetry formats are implemented. The device-status format is defined for ESP32-S3 firmware integration but has not yet been verified with the physical device.
 
 ## Purpose
 
-This document defines the MQTT topics and JSON message formats used by the MicroHydros system.
-
-The contract allows the ESP32-S3, Mosquitto, Python telemetry service, Node-RED and future services to be developed independently while using the same field names, data types and units.
+This document is the source of truth for MicroHydros MQTT topics, JSON payloads, field names, data types, units and rejection codes.
 
 Messages that do not follow this contract must not be published to validated telemetry topics.
 
 ## MQTT topics
 
-The topic structure includes a contract version and device identifier so that additional devices can be supported later.
+| Topic | Publisher | Subscriber | Purpose |
+| ----- | --------- | ---------- | ------- |
+| `microhydros/v1/devices/{device_id}/telemetry/raw` | ESP32-S3 | Python telemetry service | Combined sensor readings and statuses |
+| `microhydros/v1/devices/{device_id}/telemetry/validated/{measurement}` | Python telemetry service | Node-RED and Telegraf | One independently validated measurement |
+| `microhydros/v1/devices/{device_id}/telemetry/rejected` | Python telemetry service | Diagnostic consumers | Message-level or measurement-level rejection |
+| `microhydros/v1/devices/{device_id}/status` | ESP32-S3 or Mosquitto LWT | Node-RED | Device availability |
 
-```text
-microhydros/v1/devices/{device_id}/telemetry/raw
-microhydros/v1/devices/{device_id}/telemetry/validated/{measurement}
-microhydros/v1/devices/{device_id}/telemetry/rejected
-microhydros/v1/devices/{device_id}/status
-```
-
-For the first prototype, the device identifier is:
+The first prototype device identifier is:
 
 ```text
 esp32s3-01
 ```
 
-The raw telemetry, rejected and status topics are:
-
-```text
-microhydros/v1/devices/esp32s3-01/telemetry/raw
-microhydros/v1/devices/esp32s3-01/telemetry/rejected
-microhydros/v1/devices/esp32s3-01/status
-```
-
-Each successfully validated measurement is published independently:
-
-```text
-microhydros/v1/devices/esp32s3-01/telemetry/validated/internal_temperature
-microhydros/v1/devices/esp32s3-01/telemetry/validated/internal_humidity
-microhydros/v1/devices/esp32s3-01/telemetry/validated/external_temperature
-microhydros/v1/devices/esp32s3-01/telemetry/validated/water_temperature
-```
-
-## Topic responsibilities
-
-| Topic suffix | Publisher | Subscriber | Purpose |
-| ------------ | --------- | ---------- | ------- |
-| `telemetry/raw` | ESP32-S3 | Python telemetry service | Carries one combined message containing sensor readings and statuses |
-| `telemetry/validated/{measurement}` | Python telemetry service | Node-RED and future services | Carries one measurement that passed validation |
-| `telemetry/rejected` | Python telemetry service | Node-RED diagnostic flow | Reports messages or measurements that failed validation |
-| `status` | ESP32-S3 or Mosquitto LWT | Node-RED | Reports whether the device is online or offline |
-
-The Python telemetry service subscribes to raw telemetry from every compatible device using:
+The Python telemetry service subscribes to every compatible device using:
 
 ```text
 microhydros/v1/devices/+/telemetry/raw
 ```
 
-Node-RED and future services can subscribe to every validated measurement using:
+Node-RED and Telegraf subscribe to validated measurements using:
 
 ```text
 microhydros/v1/devices/+/telemetry/validated/+
 ```
 
-The first `+` wildcard represents one device identifier. The second represents one measurement name.
+The first `+` represents one device identifier. The second represents one measurement name.
 
-## Raw telemetry contract
+## Raw telemetry
 
-The ESP32-S3 publishes one combined raw telemetry message every 30 seconds.
-
-Each measurement is later validated independently by the Python telemetry service. A failed measurement must not prevent other valid measurements from being published.
-
-**Topic:**
-
-```text
-microhydros/v1/devices/{device_id}/telemetry/raw
-```
-
-**MQTT settings:**
+### MQTT settings
 
 | Property | Value |
 | -------- | ----- |
+| Topic | `microhydros/v1/devices/{device_id}/telemetry/raw` |
 | QoS | `1` |
 | Retained | `false` |
-| Payload format | UTF-8 JSON |
-| Publishing interval | 30 seconds |
+| Payload | UTF-8 JSON |
+| Target publishing interval | 30 seconds |
 
-### Example valid raw payload
+The ESP32-S3 publishes one combined message for each measurement cycle.
+
+### Example
 
 ```json
 {
@@ -113,17 +78,17 @@ microhydros/v1/devices/{device_id}/telemetry/raw
 }
 ```
 
-### Field definitions Raw payload
+### Common fields
 
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
-| `schema_version` | Integer | Yes | Version of this data contract |
-| `device_id` | String | Yes | Identifier of the publishing device |
-| `boot_id` | String | Yes | Identifier generated when the ESP32-S3 starts |
-| `sequence` | Integer | Yes | Message number during the current boot session |
-| `uptime_ms` | Integer | Yes | Milliseconds since the ESP32-S3 started |
-| `measurements` | Object | Yes | Collection of sensor measurements |
-| `sensor_status` | Object | Yes | Current status of each physical sensor |
+| `schema_version` | Integer | Yes | Data-contract version |
+| `device_id` | String | Yes | Publishing-device identifier |
+| `boot_id` | String | Yes | Identifier generated when the device starts |
+| `sequence` | Integer | Yes | Measurement-cycle number during the current boot |
+| `uptime_ms` | Integer | Yes | Milliseconds since the device started |
+| `measurements` | Object | Yes | Sensor measurement fields |
+| `sensor_status` | Object | Yes | Status of each physical sensor |
 
 ### Measurement fields
 
@@ -134,82 +99,83 @@ microhydros/v1/devices/{device_id}/telemetry/raw
 | `external_temperature_c` | Number or `null` | Degrees Celsius | Yes |
 | `water_temperature_c` | Number or `null` | Degrees Celsius | Yes |
 
-All four measurement fields must be present. A failed measurement uses `null`; the field must not be omitted.
+All four fields must be present. A failed measurement uses `null`; its field must not be omitted.
+
+### Sensor-status fields
+
+| Field | Affected measurement |
+| ----- | -------------------- |
+| `internal_sht31` | Internal temperature and internal humidity |
+| `external_sht31` | External temperature |
+| `water_ds18b20` | Water temperature |
+
+Supported status values are:
+
+| Value | Meaning |
+| ----- | ------- |
+| `ok` | Sensor returned a usable reading |
+| `read_error` | Sensor was detected but the read failed |
+| `not_detected` | Sensor could not be detected |
+| `invalid_value` | Sensor returned an unusable value |
+
+If a sensor status is not `ok`, every affected measurement must be `null`.
 
 ### Plausibility ranges
 
-These ranges determine whether a sensor value is technically plausible. They are deliberately broader than the desired growing-condition ranges and must not be used as alarm thresholds.
+These limits identify technically implausible readings. They are deliberately broader than growing-condition alarm thresholds.
 
-| Measurement field | Minimum | Maximum |
-| ----------------- | ------- | ------- |
+| Measurement | Minimum | Maximum |
+| ----------- | ------- | ------- |
 | `internal_temperature_c` | `-10.0` | `60.0` |
 | `internal_humidity_percent` | `0.0` | `100.0` |
 | `external_temperature_c` | `-40.0` | `60.0` |
 | `water_temperature_c` | `0.0` | `50.0` |
 
-A numeric value outside its configured range is rejected with the reason code `out_of_plausible_range`.
-
-These initial ranges may be revised after the sensors have been physically tested and calibrated.
-
-### Sensor-status values
-
-| Value | Meaning |
-| ----- | ------- |
-| `ok` | The sensor returned a usable reading |
-| `read_error` | The sensor was detected but the reading failed |
-| `not_detected` | The sensor could not be detected |
-| `invalid_value` | The sensor returned an unusable value |
-
-If a sensor status is not `ok`, its affected measurement value must be `null`.
-
-`NaN`, positive infinity and negative infinity are not valid JSON values and must never be published.
+A value outside its range is rejected with `out_of_plausible_range`. These ranges may be revised after physical testing and calibration.
 
 ### Identifier rules
 
-- `device_id` must match the device identifier in the MQTT topic.
-- `boot_id` is generated once whenever the ESP32-S3 starts.
-- `sequence` starts at `0` and increases by one for every raw message.
-- `sequence` may reset only when the device restarts.
+- The payload `device_id` must match the MQTT topic.
+- `boot_id` is generated once when the ESP32-S3 starts.
+- `sequence` starts at `0`.
+- `sequence` increases by one for every raw message.
+- `sequence` resets only when the device restarts.
 - `uptime_ms` must be a non-negative integer.
+- A new device boot must generate a new `boot_id`.
 
-## Validated measurement contract
+The validator currently carries `boot_id` and `sequence` through the pipeline but does not detect duplicates or sequence gaps.
 
-The Python telemetry service validates every measurement independently. Each valid measurement is published as a separate MQTT message.
+## Validated telemetry
 
-A failed measurement does not prevent other valid measurements from being published.
+The Python telemetry service validates every measurement independently. One failed measurement does not block other valid measurements from the same raw message.
 
-**Topic:**
-
-```text
-microhydros/v1/devices/{device_id}/telemetry/validated/{measurement}
-```
-
-**MQTT settings:**
+### MQTT settings_
 
 | Property | Value |
 | -------- | ----- |
+| Topic | `microhydros/v1/devices/{device_id}/telemetry/validated/{measurement}` |
 | QoS | `1` |
 | Retained | `false` |
-| Payload format | UTF-8 JSON |
+| Payload | UTF-8 JSON |
 
 ### Measurement mapping
 
-| Measurement | Source sensor | Unit |
-| ----------- | ------------- | ---- |
-| `internal_temperature` | `internal_sht31` | `celsius` |
-| `internal_humidity` | `internal_sht31` | `percent_rh` |
-| `external_temperature` | `external_sht31` | `celsius` |
-| `water_temperature` | `water_ds18b20` | `celsius` |
+| Measurement | Source field | Sensor | Unit |
+| ---- -------| ------------ | ------ | ---- |
+| `internal_temperature` | `internal_temperature_c` | `internal_sht31` | `celsius` |
+| `internal_humidity` | `internal_humidity_percent` | `internal_sht31` | `percent_rh` |
+| `external_temperature` | `external_temperature_c` | `external_sht31` | `celsius` |
+| `water_temperature` | `water_temperature_c` | `water_ds18b20` | `celsius` |
 
-### Example validated measurement
+### Examples
 
-**Topic:**
+Topic:
 
 ```text
 microhydros/v1/devices/esp32s3-01/telemetry/validated/water_temperature
 ```
 
-**Payload:**
+Payload:
 
 ```json
 {
@@ -226,76 +192,61 @@ microhydros/v1/devices/esp32s3-01/telemetry/validated/water_temperature
 }
 ```
 
-### Field definitions Valid measurement
+### Fields
 
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
 | `schema_version` | Integer | Yes | Supported contract version |
-| `device_id` | String | Yes | Identifier of the source device |
-| `boot_id` | String | Yes | Identifier of the current device boot session |
-| `sequence` | Integer | Yes | Sequence number from the original raw message |
-| `uptime_ms` | Integer | Yes | Device uptime from the original raw message |
-| `timestamp` | String | Yes | UTC reception time assigned by the Python telemetry service |
-| `measurement` | String | Yes | Name of the validated measurement |
-| `value` | Number | Yes | Validated measurement value |
-| `unit` | String | Yes | Unit associated with the measurement |
-| `sensor_id` | String | Yes | Sensor that produced the measurement |
+| `device_id` | String | Yes | Source-device identifier |
+| `boot_id` | String | Yes | Device boot session |
+| `sequence` | Integer | Yes | Sequence from the raw message |
+| `uptime_ms` | Integer | Yes | Uptime from the raw message |
+| `timestamp` | String | Yes | UTC reception time assigned by the Python service |
+| `measurement` | String | Yes | Validated measurement name |
+| `value` | Number | Yes | Validated finite value |
+| `unit` | String | Yes | Measurement unit |
+| `sensor_id` | String | Yes | Physical sensor identifier |
 
-### Publication rules
+All valid measurements from the same raw message receive the same `timestamp`, `boot_id`, `sequence` and `uptime_ms`.
 
-The Python telemetry service publishes a validated measurement only when:
+`null`, `NaN`, positive infinity and negative infinity must never appear on validated topics.
 
-- The corresponding raw measurement field exists.
-- Its value is a finite number.
-- The relevant sensor status is `ok`.
-- The value passes the configured plausibility checks.
-- The device ID matches the MQTT topic.
-- The schema version is supported.
-- The measurement name in the payload matches the final topic segment.
+## Rejected telemetry
 
-The Python telemetry service assigns one timestamp to the raw message before splitting it. All valid measurements originating from the same raw message therefore receive the same timestamp, `boot_id` and `sequence`.
-
-Invalid values, `null`, `NaN` and infinity must never appear on a validated topic.
-
-## Rejected telemetry contract
-
-The Python telemetry service publishes validation failures to the rejected topic.
-
-**Topic:**
+The Python telemetry service publishes failures to:
 
 ```text
 microhydros/v1/devices/{device_id}/telemetry/rejected
 ```
 
-**MQTT settings:**
-
 | Property | Value |
 | -------- | ----- |
 | QoS | `1` |
 | Retained | `false` |
-| Payload format | UTF-8 JSON |
+| Payload | UTF-8 JSON |
 
 There are two rejection scopes:
 
-- `message` — the complete raw message cannot be processed.
-- `measurement` — one measurement failed, but other valid measurements may continue.
+- `message`: the complete raw message cannot be trusted.
+- `measurement`: one measurement failed, but other valid measurements may continue.
 
-## Message-level rejection
+### Message-level rejection
 
-The complete raw message is rejected when its common metadata or JSON structure cannot be trusted.
+A complete message is rejected for failures such as:
 
-Examples include:
-
-- Empty MQTT payload
+- Empty payload
 - Invalid JSON
-- Missing or invalid `device_id`
-- Device ID does not match the MQTT topic
-- Unsupported `schema_version`
-- Missing or invalid `boot_id`
-- Missing or invalid `sequence`
-- Missing or invalid `uptime_ms`
+- Unsupported schema version
+- Missing or invalid common metadata
+- Missing or invalid device identifier
+- Device identifier not matching the MQTT topic
+- Missing or invalid boot identifier
+- Missing or invalid sequence
+- Missing or invalid uptime
 
-### Example message-level rejection
+When a message-level rejection occurs, none of its measurements may be published to validated topics.
+
+Example:
 
 ```json
 {
@@ -308,15 +259,11 @@ Examples include:
 }
 ```
 
-When a message-level rejection occurs, none of its measurements may be published to validated topics.
+### Measurement-level rejection
 
-## Measurement-level rejection
+A measurement is rejected when its field, value or corresponding sensor status is invalid.
 
-A single measurement is rejected when its value or corresponding sensor status is invalid.
-
-Other valid measurements from the same raw message may still be published.
-
-### Example measurement-level rejection
+Example:
 
 ```json
 {
@@ -334,70 +281,65 @@ Other valid measurements from the same raw message may still be published.
 }
 ```
 
-### Rejected-field definitions
+### Rejected fields
 
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
-| `schema_version` | Integer | Yes | Version of the rejected-message contract |
-| `device_id` | String | Yes | Device identifier extracted from the MQTT topic |
-| `boot_id` | String | Measurement rejection only | Source device boot session |
-| `sequence` | Integer | Measurement rejection only | Sequence number of the raw message |
-| `timestamp` | String | Yes | UTC rejection time assigned by the Python telemetry service |
-| `rejection_scope` | String | Yes | Either `message` or `measurement` |
-| `measurement` | String | Measurement rejection only | Measurement that failed validation |
-| `sensor_id` | String | Measurement rejection only | Sensor associated with the failure |
-| `received_value` | Any JSON type | Measurement rejection only | Value received by the Python telemetry service |
-| `reason_code` | String | Yes | Machine-readable reason for rejection |
+| `schema_version` | Integer | Yes | Rejected-message contract version |
+| `device_id` | String | Yes | Device identifier extracted from the topic |
+| `boot_id` | String | Measurement rejection | Source boot session |
+| `sequence` | Integer | Measurement rejection | Source sequence number |
+| `timestamp` | String | Yes | UTC rejection time |
+| `rejection_scope` | String | Yes | `message` or `measurement` |
+| `measurement` | String | Measurement rejection | Failed measurement |
+| `sensor_id` | String | Measurement rejection | Associated sensor |
+| `received_value` | Any JSON type | Measurement rejection | Received value |
+| `reason_code` | String | Yes | Machine-readable reason |
 | `description` | String | Yes | Human-readable explanation |
 
 ### Reason codes
 
 | Reason code | Scope | Meaning |
 | ----------- | ----- | ------- |
-| `empty_payload` | Message | The MQTT payload was empty |
-| `invalid_json` | Message | The payload was not valid JSON |
-| `unsupported_schema` | Message | The schema version is not supported |
+| `empty_payload` | Message | MQTT payload was empty |
+| `invalid_json` | Message | Payload was not valid JSON |
+| `unsupported_schema` | Message | Schema version is unsupported |
 | `device_id_mismatch` | Message | Payload and topic device identifiers differ |
 | `missing_metadata` | Message | Required common metadata is missing |
-| `invalid_metadata` | Message | Required common metadata has an invalid type or value |
-| `missing_measurement` | Measurement | A required measurement field is missing |
-| `missing_sensor_status` | Measurement | The required sensor-status field is missing |
-| `invalid_sensor_status` | Measurement | The sensor status is not one of the supported values |
-| `invalid_type` | Measurement | The measurement is not numeric |
-| `sensor_read_error` | Measurement | The sensor reading failed |
-| `sensor_not_detected` | Measurement | The sensor could not be detected |
-| `invalid_value` | Measurement | The sensor returned an unusable value |
-| `out_of_plausible_range` | Measurement | The value is outside the configured plausibility range |
+| `invalid_metadata` | Message | Common metadata has an invalid type or value |
+| `missing_measurement` | Measurement | Required measurement field is missing |
+| `missing_sensor_status` | Measurement | Required sensor-status field is missing |
+| `invalid_sensor_status` | Measurement | Sensor status is unsupported |
+| `invalid_type` | Measurement | Measurement is not numeric |
+| `sensor_read_error` | Measurement | Sensor read failed |
+| `sensor_not_detected` | Measurement | Sensor could not be detected |
+| `invalid_value` | Measurement | Sensor returned an unusable value |
+| `out_of_plausible_range` | Measurement | Value is outside its plausibility range |
 
-Rejected messages are diagnostic information. They must never be treated as validated telemetry or written into normal InfluxDB measurement series.
+Rejected telemetry is diagnostic information and must not be written into normal InfluxDB measurement series.
 
-## Device-status contract
+## Device status
 
-The device-status topic reports whether an ESP32-S3 is connected to the MQTT broker.
+This contract is defined for the upcoming ESP32-S3 firmware integration and has not yet been verified with the physical device.
 
-**Topic:**
-
-```text
-microhydros/v1/devices/{device_id}/status
-```
-
-**MQTT settings:**
+### MQTT settings__
 
 | Property | Value |
 | -------- | ----- |
+| Topic | `microhydros/v1/devices/{device_id}/status` |
 | QoS | `1` |
 | Retained | `true` |
-| Payload format | UTF-8 JSON |
+| Payload | UTF-8 JSON |
 
-Node-RED can subscribe to the status of every device using:
+Node-RED can subscribe to:
 
 ```text
 microhydros/v1/devices/+/status
 ```
 
-### Online status
+### Online payload
 
-After successfully connecting to Mosquitto, the ESP32-S3 publishes:
+After connecting successfully, the ESP32-S3 publishes:
 
 ```json
 {
@@ -408,9 +350,9 @@ After successfully connecting to Mosquitto, the ESP32-S3 publishes:
 }
 ```
 
-### Offline status
+### Offline payload
 
-Before connecting, the ESP32-S3 configures the following MQTT Last Will and Testament message:
+Before connecting, the ESP32-S3 configures this MQTT Last Will and Testament payload:
 
 ```json
 {
@@ -421,39 +363,28 @@ Before connecting, the ESP32-S3 configures the following MQTT Last Will and Test
 }
 ```
 
-If the ESP32-S3 unexpectedly loses power, Wi-Fi or its MQTT connection, Mosquitto publishes the offline message.
-
-For a planned disconnection, the ESP32-S3 should publish the offline message before disconnecting.
-
-### Status-field definitions
-
-| Field | Type | Required | Description |
-| ----- | ---- | -------- | ----------- |
-| `schema_version` | Integer | Yes | Version of the status contract |
-| `device_id` | String | Yes | Identifier of the device |
-| `boot_id` | String | Yes | Identifier of the current boot session |
-| `status` | String | Yes | Either `online` or `offline` |
+If the device unexpectedly loses power, Wi-Fi or MQTT connectivity, Mosquitto publishes the retained offline message.
 
 ### Status rules
 
-- The device ID must match the identifier in the MQTT topic.
-- The status message must be retained.
-- The ESP32-S3 must configure its Last Will before connecting to Mosquitto.
-- The ESP32-S3 publishes `online` only after the MQTT connection succeeds.
-- Each new boot generates a new `boot_id`.
-- Telemetry must not be retained, even though device status is retained.
-- Status messages must not contain credentials or other secrets.
-
-Node-RED records when it receives each status message. The Last Will payload does not contain a timestamp because it is prepared before an unexpected disconnection occurs.
+- `status` must be either `online` or `offline`.
+- The payload device identifier must match the MQTT topic.
+- The ESP32-S3 configures its Last Will before connecting.
+- The ESP32-S3 publishes `online` only after connecting successfully.
+- A planned shutdown should publish `offline` before disconnecting.
+- Status messages are retained.
+- Telemetry messages are not retained.
+- Status payloads must not contain credentials or secrets.
 
 ## General rules
 
-- All payloads use UTF-8 JSON.
-- Field names are case-sensitive and use `snake_case`.
-- Measurements must be JSON numbers, not strings.
+- Payloads use UTF-8 JSON.
+- Field names are case-sensitive.
+- Field names use `snake_case`.
+- Measurements are JSON numbers, not strings.
+- Boolean values are not accepted as numeric measurements.
 - `NaN` and infinity must never be published.
-- The payload `device_id` must match the device ID in the MQTT topic.
-- Invalid common metadata rejects the complete raw message.
-- A sensor error rejects only the affected measurement.
+- Invalid common metadata rejects the complete message.
+- A sensor error rejects only its affected measurements.
 - The current contract version is `v1`.
-- Passwords, Wi-Fi credentials and tokens must never appear in MQTT payloads or be committed to Git.
+- Passwords, Wi-Fi credentials and tokens must never appear in MQTT payloads.

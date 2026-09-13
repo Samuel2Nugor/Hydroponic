@@ -90,10 +90,24 @@ class TelemetryMqttService:
 
         timestamp = current_utc_timestamp()
 
+        LOGGER.info(
+            "Received raw telemetry: device_id=%s topic=%s bytes=%d",
+            device_id,
+            message.topic,
+            len(message.payload),
+        )
+
         validated, rejected = validate_raw_payload(
             message.payload,
             topic_device_id=device_id,
             timestamp=timestamp,
+        )
+
+        LOGGER.info(
+            "Validation completed: device_id=%s validated=%d rejected=%d",
+            device_id,
+            len(validated),
+            len(rejected),
         )
 
         for payload in validated:
@@ -136,6 +150,15 @@ class TelemetryMqttService:
                 topic,
                 result.rc,
             )
+            return
+
+        LOGGER.info(
+            "Queued MQTT publish: topic=%s qos=%d",
+            topic,
+            MQTT_QOS,
+        )
+
+
 
 
 def current_utc_timestamp() -> str:

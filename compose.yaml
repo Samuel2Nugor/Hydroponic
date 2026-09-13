@@ -47,9 +47,82 @@ services:
     networks:
       - microhydros-network
 
+  influxdb:
+    image: influxdb:2.8.0
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET}
+      DOCKER_INFLUXDB_INIT_RETENTION: ${INFLUXDB_RETENTION}
+    healthcheck:
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    networks:
+      - microhydros-network
+
+  grafana:
+    image: grafana/grafana:12.4.0
+    restart: unless-stopped
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      INFLUXDB_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      INFLUXDB_ORG: ${INFLUXDB_ORG}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - microhydros-network
+
+  telegraf:
+    image: telegraf:1.40.0
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      TELEGRAF_MQTT_USERNAME: ${TELEGRAF_MQTT_USERNAME}
+      TELEGRAF_MQTT_PASSWORD: ${TELEGRAF_MQTT_PASSWORD}
+      INFLUXDB_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      INFLUXDB_ORG: ${INFLUXDB_ORG}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET}
+    volumes:
+      - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - microhydros-network
+
 volumes:
   mosquitto-data:
   node-red-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
 
 networks:
   microhydros-network:

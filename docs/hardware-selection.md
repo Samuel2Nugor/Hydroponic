@@ -1,105 +1,144 @@
 # Hardware Selection
 
-## Status
+## Current status
 
-Draft — component models and wiring must be verified before implementation.
+The prototype hardware has arrived.
 
-## Purpose
+Exact board revisions, breakout-board features, pin labels and electrical requirements must be verified through physical inspection before wiring. No GPIO assignment is final yet.
 
-This document records the hardware selected for the MicroHydros prototype, the reason for each selection and any checks that must be completed before wiring.
+The development Mac is the active Docker host. The Raspberry Pi Zero 2W is retained as optional hardware but is not part of the current active deployment.
 
-## Core hardware
+## Selected prototype hardware
 
-| Component | Quantity | Purpose | MVP |
-| --------- | -------- | ------- | --- |
-| ESP32-S3 development board | 1 | Read sensors, validate measurements and publish MQTT data over Wi-Fi | Yes |
-| SHT31 sensor module | 1 | Measure internal air temperature and relative humidity | Yes |
-| SHT31 sensor module | 1 | Measure external air temperature | Yes |
-| Waterproof DS18B20 probe | 1 | Measure water or nutrient-solution temperature | Yes |
-| Raspberry Pi Zero 2W | 1 | Run Mosquitto and Node-RED as Docker containers | Yes |
-| Separate laptop | 1 | Development and optional future InfluxDB/Grafana hosting | Supporting |
+| Component | Quantity | Purpose | Integration state |
+| --------- | -------- | ------- | ----------------- |
+| ESP32-S3 development board | 1 | Read sensors and publish raw MQTT telemetry over Wi-Fi | Hardware received; exact model pending verification |
+| SHT31 module | 1 | Internal air temperature and relative humidity | Hardware received; module pending verification |
+| SHT31 module | 1 | External air temperature | Hardware received; module pending verification |
+| Waterproof DS18B20 probe | 1 | Water or nutrient-solution temperature | Hardware received; probe wiring pending verification |
+| Development Mac | 1 | Run the six Docker Compose services | Active |
+| Raspberry Pi Zero 2W | 1 | Optional future reduced deployment | Deferred |
 
-## Component selection
+The system’s software responsibilities and deployment topology are defined in [system architecture](system-architecture.md). MQTT measurement names and units are defined in the [data contract](data-contract.md).
 
-### ESP32-S3
+## ESP32-S3
 
-The ESP32-S3 was selected because it provides built-in Wi-Fi and is widely supported and documented.
+The ESP32-S3 was selected because it provides Wi-Fi, sufficient GPIO interfaces and broad development-tool support.
 
-Its responsibilities are:
+Its planned responsibilities are:
 
-- Read both SHT31 sensors over I²C.
-- Read the DS18B20 over 1-Wire.
-- Perform initial sensor-error checks.
-- Create the raw JSON payload.
-- Publish measurements to Mosquitto every 30 seconds.
-- Reconnect automatically after Wi-Fi or MQTT interruption.
+- Read both SHT31 modules over I²C
+- Read the DS18B20 over 1-Wire
+- Detect basic sensor-read failures
+- Create the raw telemetry payload
+- Maintain `boot_id`, `sequence` and `uptime_ms`
+- Publish raw MQTT telemetry
+- Configure retained online status and MQTT Last Will
+- Reconnect after Wi-Fi or MQTT interruption
 
-The exact ESP32-S3 development-board model and usable GPIO pins must be confirmed before the wiring diagram is finalised.
+The following details must be read from the physical board before wiring:
 
-### SHT31
+- Exact manufacturer and board model
+- USB connector and programming interface
+- Pin labels
+- Safe I²C GPIO choices
+- Safe 1-Wire GPIO choice
+- Pins reserved for boot, flash or onboard peripherals
+- Power-input and 3.3 V output limitations
 
-Two SHT31 modules are used:
+## SHT31 modules
 
-- Internal SHT31: internal air temperature and relative humidity.
-- External SHT31: external air temperature.
+The SHT31 is designed to measure both air temperature and relative humidity.
 
-Both sensors use I²C. They must use different I²C addresses if connected to the same bus. The selected modules must therefore support configuration of addresses `0x44` and `0x45`.
+Current use:
 
-The external sensor requires protection from rain and direct sunlight while remaining exposed to airflow.
+| Sensor ID | Used measurements |
+| --------- | ----------------- |
+| `internal_sht31` | Internal temperature and internal relative humidity |
+| `external_sht31` | External temperature |
 
-### DS18B20
+The external SHT31 is also physically capable of measuring relative humidity, but external humidity is not part of the current data contract.
 
-A waterproof DS18B20 probe is used for the water or nutrient-solution temperature.
+### I²C addressing
 
-The sensor communicates using 1-Wire and requires a pull-up resistor between its data and supply lines. The resistor value and wiring must be confirmed using the selected probe’s documentation before assembly.
+SHT31 devices normally support addresses `0x44` and `0x45`.
 
-### Raspberry Pi Zero 2W
+Both modules can share one I²C bus only if they can be configured with different addresses. Physical inspection must confirm whether the breakout modules expose an address-selection pad or pin.
 
-The Raspberry Pi Zero 2W is the Docker host for the MVP.
+If both modules are fixed to the same address, the alternatives are:
 
-It runs:
+- Use separate ESP32-S3 I²C controllers or buses
+- Add an I²C multiplexer
+- Replace one module with an address-configurable version
 
-- Mosquitto
-- Node-RED
+### Environmental protection
 
-InfluxDB and Grafana are excluded from the Raspberry Pi deployment because of its limited resources.
+A normal SHT31 breakout board is not waterproof.
+
+The external sensor needs:
+
+- Protection from rain and splashes
+- Protection from direct sunlight
+- Ventilation around the sensing element
+- Placement that reduces condensation risk
+
+A sealed enclosure without airflow would distort temperature and humidity readings.
+
+## DS18B20 probe
+
+The waterproof DS18B20 is selected for water or nutrient-solution temperature.
+
+It communicates over 1-Wire and normally requires a pull-up resistor between its data and supply lines. A `4.7 kΩ` resistor is the current planned value.
+
+Before connecting it:
+
+- Verify the probe manufacturer or supplier wiring
+- Do not assume wire colours are standardized
+- Confirm supply, ground and data conductors
+- Confirm the supported supply voltage
+- Confirm whether the probe already contains a pull-up resistor
+- Confirm that its output is safe for ESP32-S3 3.3 V logic
+
+The probe must not be powered until its wiring has been identified.
 
 ## Supporting hardware
 
 | Component | Purpose |
 | --------- | ------- |
 | Breadboard | Temporary prototype assembly |
-| Jumper wires | Connect sensors to the ESP32-S3 |
-| 4.7 kΩ resistor | Pull-up resistor for the DS18B20 data line |
+| Jumper wires | Sensor and ESP32-S3 connections |
+| `4.7 kΩ` resistor | Planned DS18B20 data pull-up |
 | USB data cable | Program and power the ESP32-S3 |
-| Raspberry Pi power supply | Provide stable power to the Docker host |
-| MicroSD card | Store the Raspberry Pi operating system and Docker data |
-| External-sensor enclosure | Protect the external SHT31 from rain and direct sunlight |
+| External-sensor enclosure or radiation shield | Protect the external SHT31 while permitting airflow |
+| Multimeter | Verify continuity, voltage and uncertain probe wiring |
 
-## Hardware checks before wiring
+Raspberry Pi power and storage accessories are only required if Pi deployment is revisited.
 
-The following details remain unconfirmed because the sensors have not arrived:
+## Verification checklist
 
-- Exact ESP32-S3 development-board model
-- Available and safe GPIO pins
-- Exact SHT31 breakout-board model
-- Whether each SHT31 module exposes address selection
-- Default I²C address of each SHT31
-- Exact DS18B20 probe wiring and supply-voltage requirements
-- Whether the SHT31 modules already contain I²C pull-up resistors
-- Power requirements for the complete prototype
+Complete these checks before producing the wiring diagram:
 
-These checks must be completed before the final wiring diagram and pin-assignment table are approved.
+- [ ] Record the exact ESP32-S3 board model
+- [ ] Photograph or record all ESP32-S3 pin labels
+- [ ] Identify the exact SHT31 breakout modules
+- [ ] Confirm both SHT31 default addresses
+- [ ] Confirm whether either SHT31 address can be changed
+- [ ] Confirm whether the SHT31 modules include I²C pull-up resistors
+- [ ] Identify the DS18B20 supply, ground and data wires
+- [ ] Confirm DS18B20 supply voltage
+- [ ] Confirm whether an external 1-Wire pull-up resistor is required
+- [ ] Select safe ESP32-S3 GPIO pins
+- [ ] Calculate or verify the prototype power requirements
+- [ ] Test each sensor independently before combining them
 
-## Current hardware assumptions
+## Working assumptions
 
-- Both SHT31 sensors can share one I²C bus using separate addresses.
-- The DS18B20 uses a separate 1-Wire GPIO.
-- All sensor signal levels are compatible with the ESP32-S3.
-- The Raspberry Pi Zero 2W can run Mosquitto and Node-RED simultaneously.
+These assumptions are not yet verified:
 
-These are working assumptions and must be verified through module documentation and physical testing.
+- Both SHT31 modules can operate on one I²C bus
+- One module can use `0x44` and the other `0x45`
+- The DS18B20 can use a dedicated ESP32-S3 GPIO
+- All signal pull-ups operate at a safe 3.3 V logic level
+- The available USB supply can power the complete prototype reliably
 
-## Pending verification
-
-Exact board models, GPIO assignments, sensor addresses and wiring will be documented after the ordered components arrive and can be physically inspected.
+Any failed assumption must be resolved before combining all three sensors.

@@ -1,22 +1,74 @@
-# Raspberry Pi deployment
+# Raspberry Pi Deployment
 
-This guide deploys the MicroHydros core services to a Raspberry Pi Zero 2W:
+## Status
+
+Deferred.
+
+The active MicroHydros development environment runs on the Mac. The Raspberry Pi Zero 2W is not currently used as the Docker host because its memory is insufficient for the complete six-service stack.
+
+This deployment target has not been abandoned. It may be reconsidered with a reduced service profile or more capable Raspberry Pi hardware.
+
+## Earlier verification
+
+The following was successfully verified on the Raspberry Pi Zero 2W:
+
+- 64-bit ARM operating system
+- Docker Engine
+- Docker Compose
+- Mosquitto container
+- Python telemetry-service container
+- Node-RED container
+- Authenticated MQTT communication
+- Access to the Node-RED editor from another computer on the local network
+- Raw telemetry validation and validated MQTT output
+
+The Pi reported approximately 416 MiB of usable memory. Running Mosquitto, the Python service and Node-RED left too little capacity for confidently adding Telegraf, InfluxDB and Grafana.
+
+## Current limitation
+
+The current `compose.yaml` defines:
 
 - Mosquitto
 - Python telemetry service
 - Node-RED
+- Telegraf
+- InfluxDB
+- Grafana
 
-For detailed MQTT usage and data-flow information, see
-[`docker/README.md`](../docker/README.md).
+Do not deploy the complete current Compose stack to the Pi Zero 2W without first measuring its resource requirements and creating a Pi-specific service profile or override.
 
-## 1. Verify the Raspberry Pi
+## Options for future Pi deployment
 
-The supported deployment uses a 64-bit operating system.
+### Reduced edge deployment
+
+Run only:
+
+- Mosquitto
+- Python telemetry service
+- Node-RED, if its visual flow is required at the edge
+
+Run Telegraf, InfluxDB and Grafana on the Mac or another computer.
+
+### More capable Raspberry Pi
+
+A Pi with more memory may be able to host the complete stack, but this must be verified through load and stability testing.
+
+### Mac-only deployment
+
+Continue running all services on the Mac. The ESP32-S3 connects to the Mac’s local network address.
+
+This is the current implementation.
+
+## Checks required before reactivation
+
+Verify the Pi:
 
 ```bash
 uname -m
 free -h
 df -h /
+docker --version
+docker compose version
 ```
 
 Expected architecture:
@@ -25,26 +77,14 @@ Expected architecture:
 aarch64
 ```
 
-Verify Docker Engine and Docker Compose:
-
-```bash
-docker --version
-docker compose version
-```
-
-If Docker is not installed, follow the official
-[Docker Engine installation instructions for Debian](https://docs.docker.com/engine/install/debian/).
-
-## 2. Check for a native Mosquitto conflict
-
-Only the Dockerized Mosquitto broker should use port `1883`.
+Check whether another Mosquitto installation already owns port `1883`:
 
 ```bash
 sudo systemctl status mosquitto --no-pager
 sudo ss -tulpn | grep ':1883'
 ```
 
-If the native Mosquitto service is active, stop and disable it:
+If a native Mosquitto service conflicts with the Docker broker, it can be disabled:
 
 ```bash
 sudo systemctl disable --now mosquitto
@@ -52,171 +92,33 @@ sudo systemctl disable --now mosquitto
 
 Do not uninstall it unless removal is intentionally required.
 
-## 3. Clone the repository
+## Required implementation work
 
-```bash
-git clone https://github.com/Samuel2Nugor/Hydroponic.git
-cd Hydroponic
-git switch main
-git pull --ff-only origin main
-```
+Before using the Pi again:
 
-## 4. Create local MQTT credentials
+1. Create a Pi-specific Compose profile or override.
+2. Decide which services run on the Pi and which remain on the Mac.
+3. Recreate local credentials on the deployment host.
+4. Verify that secret and password files remain ignored by Git.
+5. Measure memory, CPU, temperature and storage usage.
+6. Run an extended telemetry and reconnect test.
+7. Confirm the services recover after a Pi restart.
+8. Update the active architecture documentation.
 
-The credential files must only exist on the Raspberry Pi.
+General Docker setup, credentials and service commands are maintained in [`docker/README.md`](../docker/README.md) and should not be duplicated here.
 
-Create the first MQTT user:
+## Persistent data
 
-```bash
-docker run --rm -it \
-  -v "$PWD/docker/mosquitto/config:/mosquitto/config" \
-  eclipse-mosquitto:2.1.2-alpine \
-  mosquitto_passwd -c /mosquitto/config/password_file esp32s3-01
-```
-
-Add the Node-RED user:
-
-```bash
-docker run --rm -it \
-  -v "$PWD/docker/mosquitto/config:/mosquitto/config" \
-  eclipse-mosquitto:2.1.2-alpine \
-  mosquitto_passwd /mosquitto/config/password_file node-red
-```
-
-Add the telemetry-service user:
-
-```bash
-docker run --rm -it \
-  -v "$PWD/docker/mosquitto/config:/mosquitto/config" \
-  eclipse-mosquitto:2.1.2-alpine \
-  mosquitto_passwd /mosquitto/config/password_file telemetry-service
-```
-
-Create the private environment file:
-
-```bash
-cp .env.example .env
-```
-
-Set `MQTT_PASSWORD` in `.env` to the password created for the
-`telemetry-service` user.
-
-Confirm that both secret files are ignored:
-
-```bash
-git check-ignore -v .env
-git check-ignore -v docker/mosquitto/config/password_file
-```
-
-Never display, copy into documentation or commit either secret file.
-
-## 5. Validate and start the services
-
-Validate the configuration without printing resolved credentials:
-
-```bash
-docker compose config --quiet
-```
-
-Build and start the stack:
-
-```bash
-docker compose up -d --build
-```
-
-Check the containers and recent logs:
-
-```bash
-docker compose ps
-docker compose logs --tail=50 mosquitto telemetry-service node-red
-```
-
-## 6. Configure Node-RED
-
-Find the Raspberry Pi IP address:
-
-```bash
-hostname -I
-```
-
-From a browser on the same trusted network, open:
-
-```text
-http://<PI_IP>:1880
-```
-
-Import:
-
-```text
-docker/node-red/flows/validated-telemetry.json
-```
-
-Configure the MQTT broker node locally:
-
-- Server: `mosquitto`
-- Port: `1883`
-- Username: `node-red`
-- Password: the local Node-RED MQTT password
-- Topic: `microhydros/v1/devices/+/telemetry/validated/+`
-- QoS: `1`
-
-Select **Deploy**.
-
-## 7. Verify operation
-
-Check service state:
-
-```bash
-docker compose ps
-```
-
-Follow logs:
-
-```bash
-docker compose logs -f mosquitto telemetry-service node-red
-```
-
-Check Raspberry Pi resource usage:
-
-```bash
-docker stats --no-stream
-free -h
-```
-
-Use the MQTT test procedure in [`docker/README.md`](../docker/README.md)
-to verify communication from the Raspberry Pi and then from the laptop.
-
-## 8. Restart and update
-
-Restart the stack:
-
-```bash
-docker compose restart
-```
-
-Stop the stack without deleting stored data:
+Stopping containers without deleting volumes uses:
 
 ```bash
 docker compose down
 ```
 
-Update the deployment:
+Do not use `--volumes` unless deletion of stored development data is intentional.
 
-```bash
-git switch main
-git pull --ff-only origin main
-docker compose up -d --build
-```
+## Security
 
-Do not add `--volumes` to `docker compose down` unless the stored
-Mosquitto and Node-RED data is intentionally being deleted.
+Any Pi deployment remains limited to a trusted local network until TLS, MQTT topic ACLs and application authentication are implemented.
 
-## Security scope
-
-This configuration is for a trusted local development network.
-
-- Do not expose ports `1883` or `1880` through router port forwarding.
-- MQTT authentication is required.
-- The Node-RED editor must not be exposed to the public internet.
-- Docker-published ports may bypass normal UFW rules.
-- `.env` and `password_file` must remain local to each deployment.
+Do not expose Mosquitto, Node-RED, InfluxDB or Grafana directly through router port forwarding.

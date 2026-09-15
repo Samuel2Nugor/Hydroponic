@@ -28,3 +28,6 @@ docker/mosquitto/certs/
 # ESP-IDF generated local configuration
 firmware/esp32s3/sdkconfig
 firmware/esp32s3/sdkconfig.old
+
+# ESP-IDF downloaded managed components
+firmware/esp32s3/managed_components/

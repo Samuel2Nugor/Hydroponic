@@ -24,3 +24,7 @@ __pycache__/
 # Local TLS certificates and private keys
 .secrets/
 docker/mosquitto/certs/
+
+# ESP-IDF generated local configuration
+firmware/esp32s3/sdkconfig
+firmware/esp32s3/sdkconfig.old

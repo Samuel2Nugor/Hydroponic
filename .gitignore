@@ -20,3 +20,7 @@ docker/mosquitto/config/password_file
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# ESP-IDF generated local configuration
+firmware/esp32s3/sdkconfig
+firmware/esp32s3/sdkconfig.old

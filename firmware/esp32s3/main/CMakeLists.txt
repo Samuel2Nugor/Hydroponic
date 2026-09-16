@@ -2,11 +2,13 @@ idf_component_register(
     SRCS
         "microhydros.c"
         "wifi_manager.c"
+        "mqtt_publisher.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
         esp_event
         esp_netif
+        esp_timer
         esp_wifi
         nvs_flash
         mqtt

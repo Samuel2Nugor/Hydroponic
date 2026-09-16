@@ -1,11 +1,17 @@
+#include <inttypes.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "esp_chip_info.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 
+#include "mqtt_publisher.h"
 #include "wifi_manager.h"
 
 static const char *TAG = "microhydros";
@@ -24,6 +30,66 @@ static void initialize_nvs(void)
     }
 
     ESP_ERROR_CHECK(result);
+}
+
+static esp_err_t publish_synthetic_telemetry(void)
+{
+    char boot_id[9];
+
+    snprintf(
+        boot_id,
+        sizeof(boot_id),
+        "%08" PRIx32,
+        esp_random()
+    );
+
+    const uint32_t sequence = 0;
+    const int64_t uptime_ms = esp_timer_get_time() / 1000;
+
+    char payload[512];
+
+    const int payload_length = snprintf(
+        payload,
+        sizeof(payload),
+        "{"
+        "\"schema_version\":1,"
+        "\"device_id\":\"esp32s3-01\","
+        "\"boot_id\":\"%s\","
+        "\"sequence\":%" PRIu32 ","
+        "\"uptime_ms\":%" PRIi64 ","
+        "\"measurements\":{"
+            "\"internal_temperature_c\":23.6,"
+            "\"internal_humidity_percent\":61.4,"
+            "\"external_temperature_c\":18.9,"
+            "\"water_temperature_c\":20.7"
+        "},"
+        "\"sensor_status\":{"
+            "\"internal_sht31\":\"ok\","
+            "\"external_sht31\":\"ok\","
+            "\"water_ds18b20\":\"ok\""
+        "}"
+        "}",
+        boot_id,
+        sequence,
+        uptime_ms
+    );
+
+    if (
+        payload_length < 0 ||
+        (size_t)payload_length >= sizeof(payload)
+    ) {
+        ESP_LOGE(TAG, "Telemetry payload buffer is too small");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Publishing synthetic telemetry: boot_id=%s, sequence=%" PRIu32,
+        boot_id,
+        sequence
+    );
+
+    return mqtt_publisher_publish_raw(payload);
 }
 
 void app_main(void)
@@ -52,8 +118,7 @@ void app_main(void)
 
     initialize_nvs();
 
-    const esp_err_t wifi_result =
-        wifi_manager_connect();
+    const esp_err_t wifi_result = wifi_manager_connect();
 
     if (wifi_result != ESP_OK) {
         ESP_LOGE(
@@ -65,4 +130,29 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Wi-Fi connection is ready");
+
+    const esp_err_t mqtt_result = mqtt_publisher_start();
+
+    if (mqtt_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "MQTT initialization failed: %s",
+            esp_err_to_name(mqtt_result)
+        );
+        return;
+    }
+
+    const esp_err_t publish_result =
+        publish_synthetic_telemetry();
+
+    if (publish_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "Telemetry publication failed: %s",
+            esp_err_to_name(publish_result)
+        );
+        return;
+    }
+
+    ESP_LOGI(TAG, "Synthetic telemetry was queued successfully");
 }

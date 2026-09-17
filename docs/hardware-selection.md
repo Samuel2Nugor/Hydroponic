@@ -14,7 +14,7 @@ The development Mac is the active Docker host. The Raspberry Pi Zero 2W is retai
 | --------- | -------- | ------- | ----------------- |
 | ESP32-S3 development board | 1 | Read sensors and publish raw MQTT telemetry over Wi-Fi | Hardware received; exact model pending verification |
 | SHT31 module | 1 | Internal air temperature and relative humidity | Hardware received; module pending verification |
-| SHT31 module | 1 | External air temperature | Hardware received; module pending verification |
+| DS18B20 temperature sensor | 1 | External air temperature | Hardware received; wiring pending verification |
 | Waterproof DS18B20 probe | 1 | Water or nutrient-solution temperature | Hardware received; probe wiring pending verification |
 | Development Mac | 1 | Run the six Docker Compose services | Active |
 | Raspberry Pi Zero 2W | 1 | Optional future reduced deployment | Deferred |
@@ -27,8 +27,8 @@ The ESP32-S3 was selected because it provides Wi-Fi, sufficient GPIO interfaces 
 
 Its planned responsibilities are:
 
-- Read both SHT31 modules over I²C
-- Read the DS18B20 over 1-Wire
+- Read the internal SHT31 over I²C
+- Read the external and water DS18B20 sensors over 1-Wire
 - Detect basic sensor-read failures
 - Create the raw telemetry payload
 - Maintain `boot_id`, `sequence` and `uptime_ms`
@@ -46,49 +46,27 @@ The following details must be read from the physical board before wiring:
 - Pins reserved for boot, flash or onboard peripherals
 - Power-input and 3.3 V output limitations
 
-## SHT31 modules
+## SHT31 module
 
-The SHT31 is designed to measure both air temperature and relative humidity.
+The internal SHT31 measures internal air temperature and relative humidity.
+Its sensor ID is `internal_sht31`.
 
-Current use:
+Before wiring, verify the breakout board's pin labels, supply voltage,
+I²C address and any built-in pull-up resistors.
 
-| Sensor ID | Used measurements |
-| --------- | ----------------- |
-| `internal_sht31` | Internal temperature and internal relative humidity |
-| `external_sht31` | External temperature |
+## DS18B20 temperature sensors
 
-The external SHT31 is also physically capable of measuring relative humidity, but external humidity is not part of the current data contract.
+Two DS18B20 sensors are planned: `external_ds18b20` measures external
+air temperature, and the waterproof `water_ds18b20` probe measures water
+or nutrient-solution temperature.
 
-### I²C addressing
+Each DS18B20 has a unique serial code. Record which code belongs to each
+location so the firmware cannot swap external and water readings. Whether
+they share a 1-Wire bus or use separate GPIOs remains a wiring decision.
 
-SHT31 devices normally support addresses `0x44` and `0x45`.
-
-Both modules can share one I²C bus only if they can be configured with different addresses. Physical inspection must confirm whether the breakout modules expose an address-selection pad or pin.
-
-If both modules are fixed to the same address, the alternatives are:
-
-- Use separate ESP32-S3 I²C controllers or buses
-- Add an I²C multiplexer
-- Replace one module with an address-configurable version
-
-### Environmental protection
-
-A normal SHT31 breakout board is not waterproof.
-
-The external sensor needs:
-
-- Protection from rain and splashes
-- Protection from direct sunlight
-- Ventilation around the sensing element
-- Placement that reduces condensation risk
-
-A sealed enclosure without airflow would distort temperature and humidity readings.
-
-## DS18B20 probe
-
-The waterproof DS18B20 is selected for water or nutrient-solution temperature.
-
-It communicates over 1-Wire and normally requires a pull-up resistor between its data and supply lines. A `4.7 kΩ` resistor is the current planned value.
+A 1-Wire data line needs an appropriate pull-up to the sensor supply.
+A `4.7 kΩ` resistor is planned, subject to checking the actual modules
+and wiring.
 
 Before connecting it:
 
@@ -99,7 +77,7 @@ Before connecting it:
 - Confirm whether the probe already contains a pull-up resistor
 - Confirm that its output is safe for ESP32-S3 3.3 V logic
 
-The probe must not be powered until its wiring has been identified.
+Both sensors must not be powered until its wiring and each sensor´s wiring independently.
 
 ## Supporting hardware
 
@@ -109,7 +87,6 @@ The probe must not be powered until its wiring has been identified.
 | Jumper wires | Sensor and ESP32-S3 connections |
 | `4.7 kΩ` resistor | Planned DS18B20 data pull-up |
 | USB data cable | Program and power the ESP32-S3 |
-| External-sensor enclosure or radiation shield | Protect the external SHT31 while permitting airflow |
 | Multimeter | Verify continuity, voltage and uncertain probe wiring |
 
 Raspberry Pi power and storage accessories are only required if Pi deployment is revisited.
@@ -118,27 +95,25 @@ Raspberry Pi power and storage accessories are only required if Pi deployment is
 
 Complete these checks before producing the wiring diagram:
 
-- [ ] Record the exact ESP32-S3 board model
-- [ ] Photograph or record all ESP32-S3 pin labels
-- [ ] Identify the exact SHT31 breakout modules
-- [ ] Confirm both SHT31 default addresses
-- [ ] Confirm whether either SHT31 address can be changed
-- [ ] Confirm whether the SHT31 modules include I²C pull-up resistors
-- [ ] Identify the DS18B20 supply, ground and data wires
-- [ ] Confirm DS18B20 supply voltage
-- [ ] Confirm whether an external 1-Wire pull-up resistor is required
-- [ ] Select safe ESP32-S3 GPIO pins
-- [ ] Calculate or verify the prototype power requirements
+- [ ] Record the exact ESP32-S3 board model and pin labels
+- [ ] Identify the internal SHT31 breakout board, its I²C address and any built-in pull-up resistors
+- [ ] Identify the supply, ground and data wires for both DS18B20 sensors
+- [ ] Confirm each DS18B20 sensor's supply voltage and wiring
+- [ ] Record each DS18B20's unique serial code and physical location
+- [ ] Decide whether the DS18B20 sensors will share a 1-Wire bus or use separate GPIOs
+- [ ] Confirm the required 1-Wire pull-up resistor arrangement
+- [ ] Select safe ESP32-S3 GPIO pins and verify 3.3 V logic levels
+- [ ] Verify the prototype power requirements
 - [ ] Test each sensor independently before combining them
 
 ## Working assumptions
 
 These assumptions are not yet verified:
 
-- Both SHT31 modules can operate on one I²C bus
-- One module can use `0x44` and the other `0x45`
-- The DS18B20 can use a dedicated ESP32-S3 GPIO
-- All signal pull-ups operate at a safe 3.3 V logic level
+- The internal SHT31 can use a suitable ESP32-S3 I²C connection
+- Both DS18B20 sensors can be connected safely to the ESP32-S3
+- Their serial codes can be mapped reliably to external and water locations
+- All signal pull-ups operate at safe 3.3 V logic levels
 - The available USB supply can power the complete prototype reliably
 
-Any failed assumption must be resolved before combining all three sensors.
+Resolve any failed assumption before combining all three sensors.

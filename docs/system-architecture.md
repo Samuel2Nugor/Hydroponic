@@ -17,7 +17,7 @@ Exact MQTT topics, payload fields, units and rejection formats are defined in th
 | Component | Responsibility | Current state |
 | --------- | -------------- | ------------- |
 | Internal SHT31 | Measure internal air temperature and relative humidity | Hardware received; integration pending |
-| External SHT31 | Measure external air temperature | Hardware received; integration pending |
+| External DS18B20 | Measure external air temperature | Hardware received; integration pending |
 | Waterproof DS18B20 | Measure water or nutrient-solution temperature | Hardware received; integration pending |
 | ESP32-S3 | Read sensors and publish raw MQTT telemetry over Wi-Fi | Hardware received; firmware integration pending |
 | Mosquitto | Route authenticated MQTT messages | Implemented |
@@ -33,10 +33,10 @@ All six software services run as Docker containers on the development Mac.
 
 ```mermaid
 flowchart TD
-    Sensors["2 × SHT31 + DS18B20"]
+    Sensors["2 x DS18B20 + SHT31"]
     ESP["ESP32-S3 sensor node"]
 
-    subgraph Mac["Development Mac — Docker Compose"]
+    subgraph Laptop["Docker Compose"]
         MQTT["Mosquitto"]
         Validator["Python telemetry service"]
         NodeRED["Node-RED"]
@@ -104,14 +104,18 @@ Validation determines whether data is technically trustworthy. Alarm thresholds 
 | Retained telemetry | No |
 | Timestamp authority | Python telemetry service |
 | Timestamp format | UTC ISO 8601 |
-| Telemetry-service state | Stateless |
+| Telemetry-service state | In-memory cache of up to 4,096 recent message identities; resets on restart |
 | Historical storage | InfluxDB |
 | Dashboard | Grafana |
 | Offline buffering | Not implemented |
 | Sequence-gap detection | Not implemented |
 | Automatic silent-hang recovery | Not implemented |
 
-MQTT QoS 1 may deliver duplicates. The combination of `device_id`, `boot_id` and `sequence` identifies the original measurement cycle, but duplicate removal and sequence-gap detection are not currently implemented.
+MQTT QoS 1 may deliver duplicates. The telemetry service uses
+`(device_id, boot_id, sequence)` to drop recently processed duplicate
+measurement cycles. The cache holds up to 4,096 identities and resets
+when the service restarts, so this is not persistent deduplication.
+Sequence-gap detection is not implemented.
 
 ## Persistence
 

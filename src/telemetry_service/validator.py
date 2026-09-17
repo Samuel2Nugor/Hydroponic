@@ -20,7 +20,7 @@ MEASUREMENT_CONFIG = {
     },
     "external_temperature_c": {
         "measurement": "external_temperature",
-        "sensor_id": "external_sht31",
+        "sensor_id": "external_ds18b20",
         "unit": "celsius",
         "minimum": -40.0,
         "maximum": 60.0,

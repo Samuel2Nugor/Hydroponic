@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,17 +9,18 @@ import paho.mqtt.client as mqtt
 from telemetry_service.config import Settings
 from telemetry_service.validator import validate_raw_payload
 
-
 LOGGER = logging.getLogger(__name__)
 
 BASE_TOPIC = "microhydros/v1/devices"
 RAW_TOPIC_FILTER = f"{BASE_TOPIC}/+/telemetry/raw"
 MQTT_QOS = 1
+MAX_RECENT_MESSAGES = 4096
 
 
 class TelemetryMqttService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._recent_message_keys = OrderedDict()
 
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -110,27 +112,51 @@ class TelemetryMqttService:
             len(rejected),
         )
 
+        message_key = None
+        for payload in validated + rejected:
+            if "boot_id" in payload and "sequence" in payload:
+                message_key = (
+                    device_id,
+                    payload["boot_id"],
+                    payload["sequence"],
+                )
+                break
+
+        if message_key in self._recent_message_keys:
+            LOGGER.info("Dropping duplicate telemetry: key=%s", message_key)
+            return
+
+        all_published = True
+
         for payload in validated:
             topic = build_validated_topic(
                 device_id=device_id,
                 measurement=payload["measurement"],
             )
-            self._publish_json(topic=topic, payload=payload)
+            if not self._publish_json(topic=topic, payload=payload):
+                all_published = False
 
         rejected_topic = build_rejected_topic(device_id=device_id)
 
         for payload in rejected:
-            self._publish_json(
+            if not self._publish_json(
                 topic=rejected_topic,
                 payload=payload,
-            )
+            ):
+                all_published = False
+
+        if message_key is not None and all_published:
+            self._recent_message_keys[message_key] = None
+            if len(self._recent_message_keys) > MAX_RECENT_MESSAGES:
+                self._recent_message_keys.popitem(last=False)
+
 
     def _publish_json(
         self,
         *,
         topic: str,
         payload: dict[str, Any],
-    ) -> None:
+    ) -> bool:
         encoded_payload = json.dumps(
             payload,
             allow_nan=False,
@@ -150,13 +176,14 @@ class TelemetryMqttService:
                 topic,
                 result.rc,
             )
-            return
+            return False
 
         LOGGER.info(
             "Queued MQTT publish: topic=%s qos=%d",
             topic,
             MQTT_QOS,
         )
+        return True
 
 
 

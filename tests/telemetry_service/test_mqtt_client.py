@@ -74,7 +74,8 @@ def test_on_message_logs_processing_summary_and_publishes(monkeypatch, caplog):
     )
 
     service = object.__new__(TelemetryMqttService)
-    publish_json = Mock()
+    service._recent_message_keys = mqtt_client.OrderedDict()
+    publish_json = Mock(return_value=True)
     monkeypatch.setattr(service, "_publish_json", publish_json)
 
     message = SimpleNamespace(
@@ -91,3 +92,68 @@ def test_on_message_logs_processing_summary_and_publishes(monkeypatch, caplog):
         "validated=1 rejected=1"
     ) in caplog.text
     assert publish_json.call_count == 2
+
+def test_duplicate_message_is_published_only_once(monkeypatch):
+    validated = [{
+        "device_id": "esp32s3-01",
+        "boot_id": "boot-1",
+        "sequence": 42,
+        "measurement": "internal_temperature",
+        "value": 23.6,
+    }]
+    monkeypatch.setattr(
+        mqtt_client,
+        "validate_raw_payload",
+        Mock(return_value=(validated, [])),
+    )
+
+    service = object.__new__(TelemetryMqttService)
+    service._recent_message_keys = mqtt_client.OrderedDict()
+    publish_json = Mock(return_value=True)
+    monkeypatch.setattr(service, "_publish_json", publish_json)
+
+    message = SimpleNamespace(
+        topic="microhydros/v1/devices/esp32s3-01/telemetry/raw",
+        payload=b'{"device_id":"esp32s3-01","boot_id":"boot-1","sequence":42}',
+    )
+
+    service._on_message(None, None, message)
+    service._on_message(None, None, message)
+
+    assert publish_json.call_count == 1
+
+def test_new_sequence_or_boot_is_published(monkeypatch):
+    def validate_message(raw_payload, *, topic_device_id, timestamp):
+        raw = mqtt_client.json.loads(raw_payload)
+        return ([{
+            "device_id": topic_device_id,
+            "boot_id": raw["boot_id"],
+            "sequence": raw["sequence"],
+            "measurement": "internal_temperature",
+            "value": 23.6,
+        }], [])
+
+    monkeypatch.setattr(mqtt_client, "validate_raw_payload", validate_message)
+
+    service = object.__new__(TelemetryMqttService)
+    service._recent_message_keys = mqtt_client.OrderedDict()
+    publish_json = Mock(return_value=True)
+    monkeypatch.setattr(service, "_publish_json", publish_json)
+
+    topic = "microhydros/v1/devices/esp32s3-01/telemetry/raw"
+    for boot_id, sequence in [
+        ("boot-1", 42),
+        ("boot-1", 43),
+        ("boot-2", 42),
+        ("boot-1", 42),  # Duplicate of the first message
+    ]:
+        message = SimpleNamespace(
+            topic=topic,
+            payload=mqtt_client.json.dumps({
+                "boot_id": boot_id,
+                "sequence": sequence,
+            }).encode("utf-8"),
+        )
+        service._on_message(None, None, message)
+
+    assert publish_json.call_count == 3

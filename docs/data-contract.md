@@ -72,7 +72,7 @@ The ESP32-S3 publishes one combined message for each measurement cycle.
   },
   "sensor_status": {
     "internal_sht31": "ok",
-    "external_sht31": "ok",
+    "external_ds18b20": "ok",
     "water_ds18b20": "ok"
   }
 }
@@ -106,7 +106,7 @@ All four fields must be present. A failed measurement uses `null`; its field mus
 | Field | Affected measurement |
 | ----- | -------------------- |
 | `internal_sht31` | Internal temperature and internal humidity |
-| `external_sht31` | External temperature |
+| `external_ds18b20` | External temperature |
 | `water_ds18b20` | Water temperature |
 
 Supported status values are:
@@ -164,7 +164,7 @@ The Python telemetry service validates every measurement independently. One fail
 | ---- -------| ------------ | ------ | ---- |
 | `internal_temperature` | `internal_temperature_c` | `internal_sht31` | `celsius` |
 | `internal_humidity` | `internal_humidity_percent` | `internal_sht31` | `percent_rh` |
-| `external_temperature` | `external_temperature_c` | `external_sht31` | `celsius` |
+| `external_temperature` | `external_temperature_c` | `external_ds18b20` | `celsius` |
 | `water_temperature` | `water_temperature_c` | `water_ds18b20` | `celsius` |
 
 ### Examples
@@ -274,10 +274,10 @@ Example:
   "timestamp": "2026-09-08T10:16:00Z",
   "rejection_scope": "measurement",
   "measurement": "external_temperature",
-  "sensor_id": "external_sht31",
+  "sensor_id": "external_ds18b20",
   "received_value": null,
   "reason_code": "sensor_not_detected",
-  "description": "The external SHT31 sensor could not be detected"
+  "description": "The external DS18B20 sensor could not be detected"
 }
 ```
 

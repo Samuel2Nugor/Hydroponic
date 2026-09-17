@@ -126,3 +126,40 @@ The following items are intentionally unresolved:
 - Whether a watchdog should terminate the telemetry process to trigger Docker restart
 - How MQTT topic ACLs should be divided between service accounts
 - How separate InfluxDB read and write tokens should be scoped
+
+## ADR-005: Suppress recent duplicate telemetry in the Python service
+
+**Date:** 2026-09-17
+
+**Status:** Accepted and implemented
+
+### Decision
+
+Use `(device_id, boot_id, sequence)` to identify repeated measurement cycles.
+The Python telemetry service keeps up to 4,096 recent identities in memory
+and drops duplicates during the same service run.
+
+### Consequences
+
+- Recent MQTT redeliveries do not create repeated validated measurements.
+- The cache resets on restart; persistent deduplication is not guaranteed.
+- Sequence-gap detection remains future work.
+
+## ADR-006: Use DS18B20 for external temperature
+
+**Date:** 2026-09-18
+
+**Status:** Accepted; hardware integration pending
+
+### Decision
+
+Use one internal SHT31 for temperature and humidity, one DS18B20 for
+external air temperature, and a second DS18B20 for water temperature.
+Keep the measurement names; change the external sensor ID to
+`external_ds18b20`.
+
+### Consequences
+
+- The data contract, validator, tests and hardware documentation use the new ID.
+- Firmware must map each DS18B20's unique serial code to its physical location.
+- Wiring and physical sensor reads still need verification.

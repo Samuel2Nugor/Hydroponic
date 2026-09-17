@@ -20,7 +20,7 @@ VALID_PAYLOAD = {
     },
     "sensor_status": {
         "internal_sht31": "ok",
-        "external_sht31": "ok",
+        "external_ds18b20": "ok",
         "water_ds18b20": "ok",
     },
 }
@@ -53,7 +53,7 @@ def test_valid_raw_message_produces_four_validated_measurements():
 def test_failed_external_sensor_does_not_block_other_measurements():
     payload = deepcopy(VALID_PAYLOAD)
     payload["measurements"]["external_temperature_c"] = None
-    payload["sensor_status"]["external_sht31"] = "read_error"
+    payload["sensor_status"]["external_ds18b20"] = "read_error"
 
     validated, rejected = validate_raw_message(
         payload,
@@ -71,7 +71,7 @@ def test_failed_external_sensor_does_not_block_other_measurements():
 
     assert len(rejected) == 1
     assert rejected[0]["measurement"] == "external_temperature"
-    assert rejected[0]["sensor_id"] == "external_sht31"
+    assert rejected[0]["sensor_id"] == "external_ds18b20"
     assert rejected[0]["reason_code"] == "sensor_read_error"
     assert rejected[0]["received_value"] is None
 
@@ -223,7 +223,7 @@ def test_valid_json_bytes_are_validated():
 
 def test_missing_sensor_status_rejects_only_affected_measurement():
     payload = deepcopy(VALID_PAYLOAD)
-    del payload["sensor_status"]["external_sht31"]
+    del payload["sensor_status"]["external_ds18b20"]
 
     validated, rejected = validate_raw_message(
         payload,
@@ -239,7 +239,7 @@ def test_missing_sensor_status_rejects_only_affected_measurement():
 
 def test_unknown_sensor_status_rejects_only_affected_measurement():
     payload = deepcopy(VALID_PAYLOAD)
-    payload["sensor_status"]["external_sht31"] = "warming_up"
+    payload["sensor_status"]["external_ds18b20"] = "warming_up"
 
     validated, rejected = validate_raw_message(
         payload,

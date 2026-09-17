@@ -251,3 +251,20 @@ def test_unknown_sensor_status_rejects_only_affected_measurement():
     assert len(rejected) == 1
     assert rejected[0]["measurement"] == "external_temperature"
     assert rejected[0]["reason_code"] == "invalid_sensor_status"
+
+def test_null_value_with_ok_status_rejects_only_that_measurement():
+    payload = deepcopy(VALID_PAYLOAD)
+    payload["measurements"]["internal_temperature_c"] = None
+    # internal_sht31 remains "ok"
+
+    validated, rejected = validate_raw_message(
+        payload,
+        topic_device_id="esp32s3-01",
+        timestamp=TIMESTAMP,
+    )
+
+    assert len(validated) == 3
+    assert len(rejected) == 1
+    assert rejected[0]["measurement"] == "internal_temperature"
+    assert rejected[0]["reason_code"] == "invalid_type"
+    assert rejected[0]["received_value"] is None

@@ -31,6 +31,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    volumes:
+      - ./docker/mosquitto/certs/ca.crt:/etc/microhydros/certs/ca.crt:ro
     networks:
       - microhydros-network
 
@@ -46,6 +48,7 @@ services:
       TZ: Europe/Stockholm
     volumes:
       - node-red-data:/data
+      - ./docker/mosquitto/certs/ca.crt:/etc/microhydros/certs/ca.crt:ro
     networks:
       - microhydros-network
 
@@ -118,6 +121,7 @@ services:
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET}
     volumes:
       - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./docker/mosquitto/certs/ca.crt:/etc/microhydros/certs/ca.crt:ro
     networks:
       - microhydros-network
 

@@ -14,10 +14,12 @@ class Settings:
     mqtt_password: str
     mqtt_client_id: str
     mqtt_keepalive_seconds: int
+    mqtt_ca_cert: str
 
 
 def load_settings() -> Settings:
     return Settings(
+        mqtt_ca_cert=_required_environment_value("MQTT_CA_CERT"),
         mqtt_host=_required_environment_value("MQTT_HOST"),
         mqtt_port=_integer_environment_value(
             "MQTT_PORT",

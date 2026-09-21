@@ -10,6 +10,9 @@
 #include "mqtt_client.h"
 #include "sdkconfig.h"
 
+extern const char mqtt_ca_crt_start[]
+    asm("_binary_mqtt_ca_crt_start");
+
 #define MQTT_CONNECTED_BIT BIT0
 #define MQTT_CONNECT_TIMEOUT_MS 30000
 
@@ -83,7 +86,14 @@ esp_err_t mqtt_publisher_start(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (strncmp(CONFIG_MICROHYDROS_MQTT_BROKER_URI,
+                "mqtts://", 8) != 0) {
+        ESP_LOGE(TAG, "MQTT broker URI must use mqtts://");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     s_mqtt_event_group = xEventGroupCreate();
+
     if (s_mqtt_event_group == NULL) {
         ESP_LOGE(TAG, "Could not create MQTT event group");
         return ESP_ERR_NO_MEM;
@@ -92,6 +102,9 @@ esp_err_t mqtt_publisher_start(void)
     const esp_mqtt_client_config_t mqtt_config = {
         .broker.address.uri =
             CONFIG_MICROHYDROS_MQTT_BROKER_URI,
+
+        .broker.verification.certificate = mqtt_ca_crt_start,
+        .broker.verification.skip_cert_common_name_check = false,
 
         .credentials.client_id = "esp32s3-01",
         .credentials.username =
@@ -105,6 +118,7 @@ esp_err_t mqtt_publisher_start(void)
     };
 
     s_mqtt_client = esp_mqtt_client_init(&mqtt_config);
+
     if (s_mqtt_client == NULL) {
         ESP_LOGE(TAG, "Could not initialize MQTT client");
         return ESP_ERR_NO_MEM;
@@ -124,6 +138,7 @@ esp_err_t mqtt_publisher_start(void)
     }
 
     error = esp_mqtt_client_start(s_mqtt_client);
+
     if (error != ESP_OK) {
         ESP_LOGE(TAG, "Could not start MQTT client: %s",
                  esp_err_to_name(error));
@@ -160,6 +175,7 @@ esp_err_t mqtt_publisher_publish_raw(const char *payload)
     }
 
     EventBits_t bits = xEventGroupGetBits(s_mqtt_event_group);
+
     if ((bits & MQTT_CONNECTED_BIT) == 0) {
         ESP_LOGE(TAG, "Cannot publish while MQTT is disconnected");
         return ESP_ERR_INVALID_STATE;

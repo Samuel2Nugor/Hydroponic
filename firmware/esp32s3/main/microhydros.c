@@ -10,6 +10,9 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
+#include <time.h>
+#include "freertos/FreeRTOS.h"
+#include "esp_netif_sntp.h"
 
 #include "mqtt_publisher.h"
 #include "wifi_manager.h"
@@ -92,6 +95,42 @@ static esp_err_t publish_synthetic_telemetry(void)
     return mqtt_publisher_publish_raw(payload);
 }
 
+static esp_err_t synchronize_time(void)
+{
+    esp_sntp_config_t config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+
+    esp_err_t result = esp_netif_sntp_init(&config);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "SNTP initialization failed: %s",
+                 esp_err_to_name(result));
+        return result;
+    }
+
+    ESP_LOGI(TAG, "Waiting for network time");
+
+    result = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(60000));
+
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Time synchronization failed: %s",
+                 esp_err_to_name(result));
+        esp_netif_sntp_deinit();
+        return result;
+    }
+
+    time_t now;
+    struct tm utc_time;
+    char time_text[32];
+
+    time(&now);
+    gmtime_r(&now, &utc_time);
+    strftime(time_text, sizeof(time_text),
+             "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+    ESP_LOGI(TAG, "Time synchronized: %s", time_text);
+    return ESP_OK;
+}
+
 void app_main(void)
 {
     esp_chip_info_t chip_info;
@@ -130,6 +169,13 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Wi-Fi connection is ready");
+
+    const esp_err_t time_result = synchronize_time();
+
+    if (time_result != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT startup stopped: time is not synchronized");
+        return;
+    }
 
     const esp_err_t mqtt_result = mqtt_publisher_start();
 

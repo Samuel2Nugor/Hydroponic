@@ -1,160 +1,119 @@
-# System Architecture
+# System architecture
+
+MicroHydros collects environmental telemetry from an ESP32-S3, validates individual measurements, stores accepted readings and displays them through dashboards.
+
+See the [data contract](data-contract.md) for payloads, topics and validation rules, and the [Docker README](../docker/README.md) for backend configuration.
 
 ## Current status
 
-The containerized backend and dashboard pipeline are implemented and verified on the development Mac using simulated ESP32-S3 telemetry.
+The backend runs in Docker on a development host. The ESP32-S3 has published synthetic telemetry over Wi-Fi and MQTT TLS, with validated readings confirmed in Node-RED and InfluxDB.
 
-Physical sensor integration and production ESP32-S3 firmware are still pending. Raspberry Pi hosting is deferred because the Pi Zero 2W does not have enough memory for the complete development stack.
+Connectivity has been verified across two Wi-Fi networks using a stable mDNS hostname.
 
-## System boundary
-
-MicroHydros collects environmental measurements from an ESP32-S3, validates each reading independently, stores validated telemetry and presents historical measurements through a dashboard.
-
-Exact MQTT topics, payload fields, units and rejection formats are defined in the [data contract](data-contract.md).
+Physical sensor integration and periodic publishing remain pending. The current firmware publishes one synthetic payload per boot.
 
 ## Components
 
-| Component | Responsibility | Current state |
-| --------- | -------------- | ------------- |
-| Internal SHT31 | Measure internal air temperature and relative humidity | Hardware received; integration pending |
-| External DS18B20 | Measure external air temperature | Hardware received; integration pending |
-| Waterproof DS18B20 | Measure water or nutrient-solution temperature | Hardware received; integration pending |
-| ESP32-S3 | Read sensors and publish raw MQTT telemetry over Wi-Fi | Hardware received; firmware integration pending |
-| Mosquitto | Route authenticated MQTT messages | Implemented |
-| Python telemetry service | Validate, timestamp and separate measurements | Implemented and tested |
-| Node-RED | Display validated MQTT messages and support future automation | Implemented for visual inspection |
-| Telegraf | Convert validated MQTT messages into InfluxDB writes | Implemented |
-| InfluxDB | Store validated time-series measurements | Implemented |
-| Grafana | Query InfluxDB and display provisioned dashboards | Implemented |
+| Component | Responsibility |
+| --------- | -------------- |
+| ESP32-S3 | Connect to Wi-Fi and publish raw telemetry |
+| Mosquitto | Route MQTT messages with TLS, authentication and topic ACLs |
+| Python telemetry service | Validate measurements, assign timestamps and publish results |
+| Node-RED | Display validated messages for inspection |
+| Telegraf | Convert validated MQTT telemetry into InfluxDB writes |
+| InfluxDB | Store time-series measurements |
+| Grafana | Query and visualize stored measurements |
 
-## Current deployment
+The planned physical sensors are:
 
-All six software services run as Docker containers on the development Mac.
+| Sensor | Measurement |
+| ------ | ----------- |
+| Internal SHT31 | Air temperature and relative humidity |
+| External DS18B20 | External air temperature |
+| Waterproof DS18B20 | Water temperature |
+
+## Data flow
 
 ```mermaid
 flowchart TD
-    Sensors["2 x DS18B20 + SHT31"]
-    ESP["ESP32-S3 sensor node"]
+    ESP["ESP32-S3"]
 
-    subgraph Laptop["Docker Compose"]
-        MQTT["Mosquitto"]
+    subgraph Backend["Backend host — Docker Compose"]
+        Broker["Mosquitto"]
         Validator["Python telemetry service"]
         NodeRED["Node-RED"]
         Telegraf["Telegraf"]
-        InfluxDB["InfluxDB"]
+        Influx["InfluxDB"]
         Grafana["Grafana"]
     end
 
-    Sensors --> ESP
-    ESP -->|"Raw MQTT"| MQTT
-    MQTT -->|"Raw telemetry"| Validator
-    Validator -->|"Validated or rejected MQTT"| MQTT
-    MQTT -->|"Validated telemetry"| NodeRED
-    MQTT -->|"Validated telemetry"| Telegraf
-    Telegraf --> InfluxDB
-    InfluxDB --> Grafana
+    ESP -->|"Raw telemetry over TLS"| Broker
+    Broker -->|"Raw telemetry"| Validator
+    Validator -->|"Validated or rejected telemetry"| Broker
+    Broker -->|"Validated telemetry"| NodeRED
+    Broker -->|"Validated telemetry"| Telegraf
+    Telegraf -->|"Write measurements"| Influx
+    Grafana -->|"Query measurements"| Influx
 ```
 
-The ESP32-S3 must use the Mac’s local network address when connecting to Mosquitto. `localhost` only refers to the device on which a client is running.
+The telemetry service validates common metadata before checking measurements individually. One rejected measurement does not block other valid measurements from the same payload.
 
-Raspberry Pi deployment is retained as an optional future target. See [Raspberry Pi deployment](raspberry-pi-deployment.md).
+The current synthetic payload produces three accepted measurements and one external-temperature rejection. The cause of that rejection remains under investigation.
 
-## Measurement flow
+## Network addressing
 
-1. The ESP32-S3 reads the physical sensors.
-2. It records each reading and sensor status in one raw message.
-3. It publishes the raw message to Mosquitto using MQTT QoS 1.
-4. The Python service receives the message and assigns one UTC timestamp.
-5. Common metadata is validated.
-6. Each sensor measurement is validated independently.
-7. Valid measurements are published individually to validated topics.
-8. Invalid messages or measurements are published to the rejected topic.
-9. Node-RED receives validated measurements for visual inspection.
-10. Telegraf reads validated measurements and writes them to InfluxDB.
-11. Grafana queries InfluxDB and displays the four telemetry panels.
+The ESP32-S3 connects using a stable mDNS hostname:
 
-A failed sensor measurement does not prevent other valid measurements from the same raw message from continuing through the pipeline.
+```text
+mqtts://<broker-hostname>.local:8883
+```
 
-## Validation responsibility
+Backend containers connect to `mosquitto:8883`.
 
-The ESP32-S3 performs basic hardware-level checks:
+A change of IP address does not require replacing the certificate if the hostname remains unchanged and covered by the certificate. Hostname resolution and communication between devices must still work on the new network.
 
-- Whether a sensor was detected
-- Whether a sensor read succeeded
-- Whether the returned value can be represented safely
+## Validation boundary
 
-The Python telemetry service is the validation and timestamp authority. It checks:
+Firmware sensor integration is responsible for detecting hardware and reporting whether reads succeeded.
 
-- JSON structure
-- Contract version
-- Device identity
-- Required metadata
-- Sensor status
-- Value type
-- Finite numeric values
-- Technical plausibility ranges
+The Python service checks:
 
-Validation determines whether data is technically trustworthy. Alarm thresholds represent desired growing conditions and are a separate concern.
+- Payload structure and schema version
+- Device identity and required metadata
+- Sensor identity and status
+- Numeric types, finite values and plausible ranges
 
-## Runtime characteristics
+It assigns UTC timestamps to processed telemetry. These represent backend processing time, not an independently verified sensor sampling time.
 
-| Property | Current decision |
+Technical validation is separate from alarm thresholds for growing conditions.
+
+## Delivery and storage
+
+| Property | Current behavior |
 | -------- | ---------------- |
-| MQTT QoS | `1` |
-| Retained telemetry | No |
-| Timestamp authority | Python telemetry service |
-| Timestamp format | UTC ISO 8601 |
-| Telemetry-service state | In-memory cache of up to 4,096 recent message identities; resets on restart |
+| MQTT delivery | QoS 1 |
+| Retained telemetry | Disabled |
+| Duplicate identity | `(device_id, boot_id, sequence)` |
+| Duplicate cache | Up to 4,096 identities in memory |
 | Historical storage | InfluxDB |
-| Dashboard | Grafana |
 | Offline buffering | Not implemented |
 | Sequence-gap detection | Not implemented |
-| Automatic silent-hang recovery | Not implemented |
 
-MQTT QoS 1 may deliver duplicates. The telemetry service uses
-`(device_id, boot_id, sequence)` to drop recently processed duplicate
-measurement cycles. The cache holds up to 4,096 identities and resets
-when the service restarts, so this is not persistent deduplication.
-Sequence-gap detection is not implemented.
+QoS 1 permits duplicate delivery. The telemetry service drops recently processed duplicate cycles, but its cache resets on restart.
 
-## Persistence
-
-Docker named volumes preserve:
-
-- Mosquitto data
-- Node-RED data
-- InfluxDB data and configuration
-- Grafana data
-
-Grafana’s datasource and MicroHydros dashboard are also provisioned from version-controlled files so they can be recreated without relying only on the Grafana volume.
-
-## Observability
-
-The Python telemetry service logs:
-
-- MQTT connection and subscription state
-- Raw-message receipt
-- Device ID, topic and payload size
-- Validated and rejected measurement counts
-- MQTT topics queued for publishing
-- Publishing failures
-
-These logs close the earlier successful-processing visibility gap. They do not yet detect a process that remains alive but stops processing callbacks.
+Docker named volumes preserve service data. The Node-RED flow and Grafana provisioning files are also stored in Git.
 
 ## Security boundary
 
-The current deployment is intended for a trusted local development network.
+All MQTT clients and the broker healthcheck use TLS on port `8883`. Clients verify the broker certificate and authenticate with MQTT credentials. Topic ACLs restrict each account's operations.
 
-Implemented:
+The plaintext MQTT listener on port `1883` is disabled. The ESP32-S3 synchronizes network time before connecting so certificate validity can be checked.
 
-- MQTT username/password authentication
-- Local secret files excluded from Git
+This setup uses server-authenticated TLS, not mutual TLS. Web interfaces and the Telegraf-to-InfluxDB connection still use HTTP.
 
-Not yet implemented:
+## Remaining work
 
-- TLS
-- MQTT topic ACLs
-- Separate least-privilege InfluxDB tokens
-- Node-RED editor authentication
-
-The development services must not be exposed directly to the internet.
+- Integrate physical sensors and periodic publishing.
+- Investigate the external-temperature rejection.
+- Add separate restricted InfluxDB tokens and Node-RED editor authentication.
+- Address offline buffering and detection of stalled telemetry processing.

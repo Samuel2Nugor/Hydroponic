@@ -3,7 +3,7 @@ import logging
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
-
+import ssl
 import paho.mqtt.client as mqtt
 
 from telemetry_service.config import Settings
@@ -32,6 +32,12 @@ class TelemetryMqttService:
             username=settings.mqtt_username,
             password=settings.mqtt_password,
         )
+
+        tls_context = ssl.create_default_context(
+            cafile=settings.mqtt_ca_cert,
+        )
+        tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        self.client.tls_set_context(tls_context)
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message

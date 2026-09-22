@@ -68,7 +68,7 @@ static esp_err_t publish_synthetic_telemetry(void)
         "},"
         "\"sensor_status\":{"
             "\"internal_sht31\":\"ok\","
-            "\"external_sht31\":\"ok\","
+            "\"external_ds18b20\":\"ok\","
             "\"water_ds18b20\":\"ok\""
         "}"
         "}",

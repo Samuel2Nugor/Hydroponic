@@ -6,13 +6,21 @@ services:
       MQTT_HEALTHCHECK_USERNAME: ${MQTT_USERNAME}
       MQTT_HEALTHCHECK_PASSWORD: ${MQTT_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -u \"$$MQTT_HEALTHCHECK_USERNAME\" -P \"$$MQTT_HEALTHCHECK_PASSWORD\" -t 'microhydros/health/mosquitto' -m 'ok' -q 0 >/dev/null 2>&1"]
+      test:
+        - CMD-SHELL
+        - >-
+          mosquitto_pub -h localhost -p 8883
+          --cafile /mosquitto/certs/ca.crt
+          -u "$$MQTT_HEALTHCHECK_USERNAME"
+          -P "$$MQTT_HEALTHCHECK_PASSWORD"
+          -V mqttv5 -q 1
+          -t microhydros/health/mosquitto -m ok
+          >/dev/null 2>&1
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 5s
     ports:
-      - "1883:1883"
       - "8883:8883"
     volumes:
       - ./docker/mosquitto/config:/mosquitto/config:ro

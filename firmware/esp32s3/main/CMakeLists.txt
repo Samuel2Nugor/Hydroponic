@@ -3,6 +3,7 @@ idf_component_register(
         "microhydros.c"
         "wifi_manager.c"
         "mqtt_publisher.c"
+        "sht31.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
@@ -12,6 +13,7 @@ idf_component_register(
         esp_wifi
         nvs_flash
         mqtt
+        esp_driver_i2c
     EMBED_TXTFILES
         "certs/mqtt_ca.crt"
 )

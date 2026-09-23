@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS
+        "microhydros.c"
+        "wifi_manager.c"
+        "mqtt_publisher.c"
+        "sht31.c"
+        "ds18b20_manager.c"
+    INCLUDE_DIRS
+        "."
+    PRIV_REQUIRES
+        esp_event
+        esp_netif
+        esp_timer
+        esp_wifi
+        nvs_flash
+        mqtt
+        esp_driver_i2c
+        esp_driver_gpio
+        ds18b20
+        onewire_bus
+    EMBED_TXTFILES
+        "certs/mqtt_ca.crt"
+)

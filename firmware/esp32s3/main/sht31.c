@@ -7,12 +7,14 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
-#define SHT31_SDA_GPIO 8
-#define SHT31_SCL_GPIO 9
+
 
 #define SHT31_ADDRESS_PRIMARY   0x44
 #define SHT31_ADDRESS_SECONDARY 0x45
+#define SHT31_SDA_GPIO CONFIG_MICROHYDROS_SHT31_SDA_GPIO
+#define SHT31_SCL_GPIO CONFIG_MICROHYDROS_SHT31_SCL_GPIO
 
 #define SHT31_I2C_FREQUENCY_HZ 100000
 

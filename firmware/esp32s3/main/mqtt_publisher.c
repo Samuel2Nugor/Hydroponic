@@ -19,7 +19,9 @@ extern const char mqtt_ca_crt_start[]
 static const char *TAG = "mqtt_publisher";
 
 static const char *RAW_TELEMETRY_TOPIC =
-    "microhydros/v1/devices/esp32s3-01/telemetry/raw";
+    "microhydros/v1/devices/"
+    CONFIG_MICROHYDROS_DEVICE_ID
+    "/telemetry/raw";
 
 static EventGroupHandle_t s_mqtt_event_group;
 static esp_mqtt_client_handle_t s_mqtt_client;
@@ -106,7 +108,7 @@ esp_err_t mqtt_publisher_start(void)
         .broker.verification.certificate = mqtt_ca_crt_start,
         .broker.verification.skip_cert_common_name_check = false,
 
-        .credentials.client_id = "esp32s3-01",
+        .credentials.client_id = CONFIG_MICROHYDROS_DEVICE_ID,
         .credentials.username =
             CONFIG_MICROHYDROS_MQTT_USERNAME,
 

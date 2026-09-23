@@ -4,6 +4,7 @@ idf_component_register(
         "wifi_manager.c"
         "mqtt_publisher.c"
         "sht31.c"
+        "ds18b20_manager.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES

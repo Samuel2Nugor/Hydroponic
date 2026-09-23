@@ -5,37 +5,23 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "ds18b20_manager.h"
 #include "esp_chip_info.h"
-#include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
-#include "esp_rom_sys.h"
 #include "esp_timer.h"
-#include "ds18b20.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "mqtt_publisher.h"
 #include "nvs_flash.h"
-#include "onewire_bus.h"
-#include "onewire_device.h"
+#include "sdkconfig.h"
 #include "sht31.h"
 #include "wifi_manager.h"
 
 static const char *TAG = "microhydros";
-
-#define WATER_DS18B20_ROM UINT64_C(0xBE0000006DEFD428)
-#define EXTERNAL_DS18B20_ROM UINT64_C(0xDA00000070118128)
-#define ONEWIRE_GPIO GPIO_NUM_5
-
-typedef struct {
-    uint64_t rom;
-    ds18b20_device_handle_t device;
-    float temperature_c;
-    const char *status;
-    bool valid;
-} ds18b20_sensor_t;
 
 static void initialize_nvs(void)
 {
@@ -54,200 +40,27 @@ static void initialize_nvs(void)
 }
 
 static void format_temperature_value(
-    const ds18b20_sensor_t *sensor,
+    float temperature_c,
+    bool valid,
     char *buffer,
     size_t buffer_size
 )
 {
-    if (sensor->valid) {
-        snprintf(buffer, buffer_size, "%.2f", sensor->temperature_c);
+    if (valid) {
+        snprintf(buffer, buffer_size, "%.2f", temperature_c);
     } else {
         snprintf(buffer, buffer_size, "null");
     }
 }
 
-static void prime_onewire_bus(void)
-{
-    gpio_reset_pin(ONEWIRE_GPIO);
-    gpio_set_direction(ONEWIRE_GPIO, GPIO_MODE_INPUT_OUTPUT_OD);
-    gpio_set_level(ONEWIRE_GPIO, 1);
-    esp_rom_delay_us(1000);
-
-    gpio_set_level(ONEWIRE_GPIO, 0);
-    esp_rom_delay_us(480);
-    gpio_set_level(ONEWIRE_GPIO, 1);
-    esp_rom_delay_us(480);
-
-    gpio_reset_pin(ONEWIRE_GPIO);
-}
-
-static void read_ds18b20_sensors(
-    ds18b20_sensor_t *water_sensor,
-    ds18b20_sensor_t *external_sensor
-)
-{
-    /*
-     * The UART backend needs an initial reset transaction on this ESP32-S3
-     * before its first ROM search. Without it, the first search reports no
-     * participating devices even though both probes are present.
-     */
-    prime_onewire_bus();
-
-    onewire_bus_config_t bus_config = {
-        .bus_gpio_num = ONEWIRE_GPIO,
-        .flags = {
-            .en_pull_up = true,
-        },
-    };
-
-    onewire_bus_uart_config_t uart_config = {
-        .uart_port_num = 1,
-    };
-
-    onewire_bus_handle_t bus = NULL;
-    esp_err_t result = onewire_new_bus_uart(
-        &bus_config,
-        &uart_config,
-        &bus
-    );
-
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "1-Wire bus setup failed: %s", esp_err_to_name(result));
-        return;
-    }
-
-    onewire_device_iter_handle_t iter = NULL;
-    result = onewire_new_device_iter(bus, &iter);
-
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "1-Wire iterator failed: %s", esp_err_to_name(result));
-        onewire_bus_del(bus);
-        return;
-    }
-
-    int device_count = 0;
-    onewire_device_t discovered_device;
-
-    while (
-        (result = onewire_device_iter_get_next(
-            iter,
-            &discovered_device
-        )) == ESP_OK
-    ) {
-        const uint64_t rom = (uint64_t)discovered_device.address;
-        ds18b20_sensor_t *sensor = NULL;
-
-        ESP_LOGI(TAG, "1-Wire ROM: %016" PRIX64, rom);
-
-        if (rom == water_sensor->rom) {
-            sensor = water_sensor;
-        } else if (rom == external_sensor->rom) {
-            sensor = external_sensor;
-        } else {
-            ESP_LOGW(TAG, "Unknown 1-Wire device ignored: %016" PRIX64, rom);
-        }
-
-        if (sensor != NULL) {
-            ds18b20_config_t device_config = {};
-            const esp_err_t device_result =
-                ds18b20_new_device_from_enumeration(
-                    &discovered_device,
-                    &device_config,
-                    &sensor->device
-                );
-
-            if (device_result == ESP_OK) {
-                sensor->status = "read_error";
-            } else {
-                ESP_LOGE(
-                    TAG,
-                    "DS18B20 registration failed for ROM %016" PRIX64 ": %s",
-                    rom,
-                    esp_err_to_name(device_result)
-                );
-            }
-        }
-
-        device_count++;
-    }
-
-    if (result == ESP_ERR_NOT_FOUND) {
-        ESP_LOGI(TAG, "1-Wire scan complete: %d device(s)", device_count);
-    } else {
-        ESP_LOGE(TAG, "1-Wire scan failed: %s", esp_err_to_name(result));
-    }
-
-    onewire_del_device_iter(iter);
-
-    if (water_sensor->device == NULL && external_sensor->device == NULL) {
-        ESP_LOGE(TAG, "No configured DS18B20 device available for reading");
-        onewire_bus_del(bus);
-        return;
-    }
-
-    result = ds18b20_trigger_temperature_conversion_for_all(bus);
-
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "DS18B20 conversion failed: %s", esp_err_to_name(result));
-        return;
-    }
-
-    ds18b20_sensor_t *sensors[] = {
-        water_sensor,
-        external_sensor,
-    };
-
-    for (size_t i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++) {
-        ds18b20_sensor_t *sensor = sensors[i];
-
-        if (sensor->device == NULL) {
-            continue;
-        }
-
-        result = ds18b20_get_temperature(
-            sensor->device,
-            &sensor->temperature_c
-        );
-
-        if (result != ESP_OK) {
-            ESP_LOGE(
-                TAG,
-                "DS18B20 ROM %016" PRIX64 " read failed: %s",
-                sensor->rom,
-                esp_err_to_name(result)
-            );
-            continue;
-        }
-
-        sensor->valid = true;
-        sensor->status = "ok";
-
-        ESP_LOGI(
-            TAG,
-            "DS18B20 ROM %016" PRIX64 " temperature: %.2f C",
-            sensor->rom,
-            sensor->temperature_c
-        );
-    }
-}
-
 static esp_err_t publish_telemetry(
+    const char *boot_id,
+    uint32_t sequence,
     float internal_temperature_c,
     float internal_humidity_percent,
-    const ds18b20_sensor_t *water_sensor,
-    const ds18b20_sensor_t *external_sensor
+    const ds18b20_readings_t *ds18b20_readings
 )
 {
-    char boot_id[9];
-
-    snprintf(
-        boot_id,
-        sizeof(boot_id),
-        "%08" PRIx32,
-        esp_random()
-    );
-
-    const uint32_t sequence = 0;
     const int64_t uptime_ms = esp_timer_get_time() / 1000;
 
     char payload[512];
@@ -255,13 +68,15 @@ static esp_err_t publish_telemetry(
     char external_temperature_value[24];
 
     format_temperature_value(
-        water_sensor,
+        ds18b20_readings->water_temperature_c,
+        ds18b20_readings->water_valid,
         water_temperature_value,
         sizeof(water_temperature_value)
     );
 
     format_temperature_value(
-        external_sensor,
+        ds18b20_readings->external_temperature_c,
+        ds18b20_readings->external_valid,
         external_temperature_value,
         sizeof(external_temperature_value)
     );
@@ -271,7 +86,7 @@ static esp_err_t publish_telemetry(
         sizeof(payload),
         "{"
             "\"schema_version\":1,"
-            "\"device_id\":\"esp32s3-01\","
+            "\"device_id\":\"%s\","
             "\"boot_id\":\"%s\","
             "\"sequence\":%" PRIu32 ","
             "\"uptime_ms\":%" PRIi64 ","
@@ -287,6 +102,7 @@ static esp_err_t publish_telemetry(
                 "\"water_ds18b20\":\"%s\""
             "}"
         "}",
+        CONFIG_MICROHYDROS_DEVICE_ID,
         boot_id,
         sequence,
         uptime_ms,
@@ -294,8 +110,8 @@ static esp_err_t publish_telemetry(
         internal_humidity_percent,
         external_temperature_value,
         water_temperature_value,
-        external_sensor->status,
-        water_sensor->status
+        ds18b20_readings->external_status,
+        ds18b20_readings->water_status
     );
 
     if (
@@ -429,37 +245,15 @@ void app_main(void)
         "SHT31 initialization succeeded"
     );
 
-    float internal_temperature_c;
-    float internal_humidity_percent;
+    const esp_err_t ds18b20_init_result = ds18b20_manager_init();
 
-    const esp_err_t read_result = sht31_read(
-        &internal_temperature_c,
-        &internal_humidity_percent
-    );
-
-    if (read_result != ESP_OK) {
+    if (ds18b20_init_result != ESP_OK) {
         ESP_LOGE(
             TAG,
-            "SHT31 read failed: %s",
-            esp_err_to_name(read_result)
+            "DS18B20 initialization failed: %s",
+            esp_err_to_name(ds18b20_init_result)
         );
-        return;
     }
-
-    ds18b20_sensor_t water_sensor = {
-        .rom = WATER_DS18B20_ROM,
-        .status = "not_detected",
-    };
-
-    ds18b20_sensor_t external_sensor = {
-        .rom = EXTERNAL_DS18B20_ROM,
-        .status = "not_detected",
-    };
-
-    read_ds18b20_sensors(
-        &water_sensor,
-        &external_sensor
-    );
 
     const esp_err_t wifi_result =
         wifi_manager_connect();
@@ -501,25 +295,73 @@ void app_main(void)
         return;
     }
 
-    const esp_err_t publish_result =
-        publish_telemetry(
+    char boot_id[9];
+    snprintf(
+        boot_id,
+        sizeof(boot_id),
+        "%08" PRIx32,
+        esp_random()
+    );
+
+    uint32_t sequence = 0;
+    TickType_t last_wake_time = xTaskGetTickCount();
+
+    while (true) {
+        float internal_temperature_c;
+        float internal_humidity_percent;
+
+        const esp_err_t read_result = sht31_read(
+            &internal_temperature_c,
+            &internal_humidity_percent
+        );
+
+        if (read_result != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "SHT31 read failed: %s",
+                esp_err_to_name(read_result)
+            );
+            vTaskDelayUntil(
+                &last_wake_time,
+                pdMS_TO_TICKS(CONFIG_MICROHYDROS_TELEMETRY_INTERVAL_MS)
+            );
+            continue;
+        }
+
+        ds18b20_readings_t ds18b20_readings;
+        const esp_err_t ds18b20_read_result =
+            ds18b20_manager_read(&ds18b20_readings);
+
+        if (ds18b20_read_result != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "DS18B20 read failed: %s",
+                esp_err_to_name(ds18b20_read_result)
+            );
+        }
+
+        const esp_err_t publish_result = publish_telemetry(
+            boot_id,
+            sequence,
             internal_temperature_c,
             internal_humidity_percent,
-            &water_sensor,
-            &external_sensor
+            &ds18b20_readings
         );
 
-    if (publish_result != ESP_OK) {
-        ESP_LOGE(
-            TAG,
-            "Telemetry publication failed: %s",
-            esp_err_to_name(publish_result)
+        if (publish_result == ESP_OK) {
+            ESP_LOGI(TAG, "Telemetry was queued successfully");
+            sequence++;
+        } else {
+            ESP_LOGE(
+                TAG,
+                "Telemetry publication failed: %s",
+                esp_err_to_name(publish_result)
+            );
+        }
+
+        vTaskDelayUntil(
+            &last_wake_time,
+            pdMS_TO_TICKS(CONFIG_MICROHYDROS_TELEMETRY_INTERVAL_MS)
         );
-        return;
     }
-
-    ESP_LOGI(
-        TAG,
-        "Telemetry was queued successfully"
-    );
 }

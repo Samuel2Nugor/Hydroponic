@@ -14,6 +14,9 @@ idf_component_register(
         nvs_flash
         mqtt
         esp_driver_i2c
+        esp_driver_gpio
+        ds18b20
+        onewire_bus
     EMBED_TXTFILES
         "certs/mqtt_ca.crt"
 )

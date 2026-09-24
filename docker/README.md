@@ -1,23 +1,23 @@
 # Docker configuration
 
-Service configuration for the MicroHydros backend. See the [root README](../README.md) for startup, shutdown, service addresses and end-to-end verification.
+This directory contains the configuration for the six MicroHydros backend services. The ESP32-S3 sends readings from the physical sensors every five seconds by default; the backend validates them and stores accepted measurements. See the [root README](../README.md) for startup, shutdown, service addresses and telemetry verification. See the [data contract](../docs/data-contract.md) for MQTT payloads and validation rules.
 
 ## Configuration files
 
 | Path | Purpose |
 | ---- | ------- |
-| `mosquitto/config/mosquitto.conf` | Broker listeners, authentication and TLS |
+| `mosquitto/config/mosquitto.conf` | Broker listener, authentication and TLS |
 | `mosquitto/config/acl_file` | MQTT topic permissions |
-| `node-red/flows/validated-telemetry.json` | Exported telemetry inspection flow |
+| `node-red/flows/validated-telemetry.json` | Exported flow for inspecting validated telemetry |
 | `telegraf/telegraf.conf` | MQTT consumption and InfluxDB output |
-| `grafana/provisioning/` | Datasource and dashboard provisioning |
+| `grafana/provisioning/` | Data source and dashboard provisioning |
 | `grafana/dashboards/` | Dashboard definitions |
 
-Run the commands below from the repository root.
+Run the following setup commands from the repository root. The examples use a POSIX-compatible shell.
 
 ## MQTT accounts
 
-The configuration uses four accounts:
+The broker uses these accounts:
 
 - `esp32s3-01`
 - `telemetry-service`
@@ -33,7 +33,7 @@ docker run --rm -it \
   mosquitto_passwd -c /mosquitto/config/password_file esp32s3-01
 ```
 
-Add each remaining account using the same command **without `-c`**, replacing `<service-name>`:
+Add each remaining account with the same command **without `-c`**, replacing `<service-name>` with `telemetry-service`, `node-red` or `telegraf`:
 
 ```bash
 docker run --rm -it \
@@ -42,11 +42,11 @@ docker run --rm -it \
   mosquitto_passwd /mosquitto/config/password_file <service-name>
 ```
 
-The `-c` option creates or overwrites the password file. Keep the file outside Git.
+`-c` creates or overwrites the password file, so use it only for the first account. Keep the file outside Git.
 
 ## Environment
 
-Create `.env` from `.env.example` if it does not already exist. Configure:
+Create `.env` from `.env.example` if needed. Configure the MQTT settings for the Compose services:
 
 ```dotenv
 MQTT_HOST=mosquitto
@@ -56,27 +56,23 @@ MQTT_USERNAME=telemetry-service
 TELEGRAF_MQTT_USERNAME=telegraf
 ```
 
-Set the corresponding passwords to match the broker accounts. Configure ESP32-S3 and Node-RED credentials in their respective clients.
-
-Keep `.env`, password files and private keys outside Git.
+Set `MQTT_PASSWORD` and `TELEGRAF_MQTT_PASSWORD` to match their password-file accounts. Configure ESP32-S3 and Node-RED credentials in those clients. `.env` also contains InfluxDB and Grafana setup values; keep it outside Git.
 
 ## TLS certificates
 
-Provision these files locally before starting the stack:
+Provision these files locally before starting the services:
 
 | Path | Purpose |
 | ---- | ------- |
-| `docker/mosquitto/certs/ca.crt` | Public CA certificate |
+| `docker/mosquitto/certs/ca.crt` | Public CA certificate shared with MQTT clients |
 | `docker/mosquitto/certs/server.crt` | Broker certificate |
 | `docker/mosquitto/certs/server.key` | Broker private key |
 
-The broker certificate's Subject Alternative Names must cover the names used by clients: the host's stable mDNS hostname, `mosquitto`, `localhost` and IP address `127.0.0.1`.
+The broker certificate's Subject Alternative Names must cover the names clients use: `<broker-hostname>.local` for the device, `mosquitto` for containers and `localhost` for local checks, plus IP address `127.0.0.1`.
 
-Mosquitto mounts the certificate directory at `/mosquitto/certs`. Backend clients mount only the public CA certificate at `/etc/microhydros/certs/ca.crt`.
+Mosquitto mounts the certificate directory at `/mosquitto/certs`. Backend MQTT clients mount the public CA certificate at `/etc/microhydros/certs/ca.crt`. Keep the CA private key outside containers. Docker Compose does not create or renew certificates.
 
-Keep the CA private key outside containers. Certificate generation and renewal are not automated by Compose.
-
-MQTT uses port `8883`; the plaintext listener on `1883` is disabled.
+MQTT listens on port `8883` with TLS. The plaintext listener on `1883` is disabled.
 
 ## Topic permissions
 
@@ -87,39 +83,32 @@ MQTT uses port `8883`; the plaintext listener on `1883` is disabled.
 | `node-red` | Read validated telemetry and device status |
 | `telegraf` | Read validated telemetry |
 
-Other operations are denied. Reading rejected telemetry requires an explicit diagnostic permission.
+Other operations are denied. The status permissions reserve a topic for a future device-status feature; current firmware has not been verified publishing online/offline status. Reading rejected telemetry requires an explicitly authorized diagnostic account or ACL change.
 
 ## Broker healthcheck
 
-The healthcheck publishes to `microhydros/health/mosquitto` over TLS using MQTT v5 and QoS 1. It currently reuses the telemetry-service credentials.
+The broker healthcheck publishes to `microhydros/health/mosquitto` using TLS, MQTT v5 and QoS 1. It reuses the telemetry-service credentials. An accepted publish may report MQTT reason code `0` or `16` (no subscriber).
 
-Compose uses `$$` in the command to expand credentials inside the container. An accepted publication may return reason code `0` or `16` (no matching subscribers).
-
-Broker health does not verify the complete telemetry pipeline.
+The healthcheck confirms that the broker accepts a publish; use the verification steps in the root README to check the complete sensor-to-dashboard flow.
 
 ## Node-RED flow
 
-Import `docker/node-red/flows/validated-telemetry.json` into the editor.
-
-The exported flow uses:
+Import `docker/node-red/flows/validated-telemetry.json` in the Node-RED editor, then configure:
 
 - Broker: `mosquitto:8883`
-- TLS with server certificate verification enabled
-- CA: `/etc/microhydros/certs/ca.crt`
+- TLS: enabled, with broker certificate verification
+- CA certificate: `/etc/microhydros/certs/ca.crt`
 - Server name: `mosquitto`
-- Topic: `microhydros/v1/devices/+/telemetry/validated/+`
-- QoS: `1`
+- MQTT username and password: the `node-red` account
 
-Enter the `node-red` MQTT credentials and deploy. Credentials are not included in the export.
-
-The flow displays validated messages in Debug. Validation remains in the Python service. Export subsequent editor changes to keep the repository flow updated.
+The flow subscribes to `microhydros/v1/devices/+/telemetry/validated/+` at QoS `1` and displays the decoded messages in Debug. Credentials are not included in the exported flow. Deploy it after configuring the broker, and export changes made in the editor back to the repository flow file.
 
 ## Telegraf and InfluxDB
 
-Telegraf consumes validated telemetry through `ssl://mosquitto:8883`, verifies the broker certificate and writes measurements to the `telemetry` bucket.
+Telegraf subscribes to validated telemetry through `ssl://mosquitto:8883`, verifies the broker certificate and writes measurements to the InfluxDB `telemetry` bucket.
 
-InfluxDB initialization settings apply only to an empty data volume. Changing them in `.env` does not update existing database credentials.
+InfluxDB initialization values in `.env` apply only when its data volume is empty. Changing the initialization password or token later does not update existing credentials.
 
 ## Security scope
 
-MQTT TLS does not protect the HTTP interfaces or the HTTP connection to InfluxDB. Node-RED editor authentication and separate restricted InfluxDB tokens remain unconfigured.
+MQTT TLS protects the MQTT connections. The HTTP interfaces and Telegraf's HTTP connection to InfluxDB are not covered by it. Node-RED editor authentication and separate restricted InfluxDB tokens for services remain unconfigured; Telegraf and Grafana currently use the configured InfluxDB admin token. Keep development services on a trusted local network.

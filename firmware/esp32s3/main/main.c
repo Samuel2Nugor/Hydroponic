@@ -21,7 +21,7 @@
 #include "sht31.h"
 #include "wifi_manager.h"
 
-static const char *TAG = "microhydros";
+static const char *TAG = "telemetry";
 
 static void initialize_nvs(void)
 {

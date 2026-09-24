@@ -63,7 +63,8 @@ Pins and ROM addresses can be changed through Kconfig without editing the source
 | `main/Kconfig.projbuild` | Device, network, MQTT and sensor configuration options |
 | `main/idf_component.yml` | Managed ESP-IDF component dependencies |
 
-The DS18B20 implementation uses the Espressif `ds18b20` component with the UART-based `onewire_bus` backend. The current hardware requires an initial 1-Wire reset before the first ROM search; that workaround is contained inside `ds18b20_manager.c`.
+The DS18B20 implementation uses the Espressif `ds18b20` component with the UART-based `onewire_bus` backend.
+The current hardware requires an initial 1-Wire reset before the first ROM search; that workaround is contained inside `ds18b20_manager.c`.
 
 ## Configuration
 
@@ -102,7 +103,7 @@ Activate the ESP-IDF environment, enter this directory, and run:
 
 ```bash
 idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+idf.py flash monitor
 ```
 
 Use the serial port assigned by the operating system if it differs from `/dev/ttyACM0`. Exit the monitor with `Ctrl+]`.
@@ -128,4 +129,5 @@ The sensor-reading timestamps should advance by approximately the configured int
 
 ## Current limitation
 
-The current application binary leaves approximately 8% free space in the smallest configured application partition. New firmware features may require reducing binary size or changing the partition table. Check the reported binary size after every build.
+The current application binary leaves approximately 8% free space in the smallest configured application partition.
+New firmware features may require reducing binary size or changing the partition table. Check the reported binary size after every build.

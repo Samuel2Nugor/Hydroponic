@@ -1,6 +1,6 @@
-# MicroHydros
+# Telemetry
 
-MicroHydros is an IoT monitoring system designed to collect environmental and water-related sensor data from an ESP32-S3, transport the data securely over MQTT, validate incoming telemetry, store time-series data, and visualize the results.
+Telemtry is an IoT monitoring system designed to collect environmental and water-related sensor data from an ESP32-S3, transport the data securely over MQTT, validate incoming telemetry, store time-series data, and visualize the results.
 
 The project combines embedded firmware, secure device communication, backend services, data validation, storage, and visualization into one end-to-end IoT system.
 
@@ -26,7 +26,7 @@ Telemetry Validation Service
       └── Rejected telemetry
       │
       ▼
-   Node-RED
+   Node-RED( Only for visualitzacion)
       │
       ▼
    Telegraf

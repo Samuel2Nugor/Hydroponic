@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS
-        "microhydros.c"
+        "main.c"
         "wifi_manager.c"
         "mqtt_publisher.c"
         "sht31.c"
